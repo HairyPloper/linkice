@@ -31,13 +31,12 @@ const audio = document.getElementById("myAudio");
 const audioBtn = document.getElementById("audioToggle");
 audio.volume = 0.1;
 
-const snowToggle = document.getElementById("snowToggle");
-snowToggle.onclick = () => {
-  document.querySelector("canvas").style.display =
-    document.querySelector("canvas").style.display === "none" ? "block" : "none";
-};
+let screenTrack = null;
+let screenAudioTrack = null;
+const screenBtn = document.getElementById("screen-btn");
 
-// toggle video background
+const snowToggle = document.getElementById("snowToggle");
+
 videoToggle.onclick = () => {
   if (bgVideo.paused) {
     bgVideo.play();
@@ -59,6 +58,71 @@ audioBtn.onclick = () => {
     audioBtn.classList.remove("playing");
   }
 };
+
+snowToggle.onclick = () => {
+  document.querySelector("canvas").style.display =
+    document.querySelector("canvas").style.display === "none"
+      ? "block"
+      : "none";
+};
+
+screenBtn.onclick = async () => {
+  if (!screenTrack) {
+    try {
+      // [videoTrack, audioTrack]
+      const result = await AgoraRTC.createScreenVideoTrack(
+        {
+          encoderConfig: { width: 1920, height: 1080, frameRate: 30, bitrateMax: 4780, bitrateMin: 1000 },
+          optimizationMode: "motion",
+        },
+        "auto"
+      );
+
+      // check if we got audo-video or just video
+      if (Array.isArray(result)) {
+        screenTrack = result[0];
+        screenAudioTrack = result[1];
+      } else {
+        screenTrack = result;
+        screenAudioTrack = null;
+      }
+
+      if (screenAudioTrack) {
+        await client.publish([screenTrack, screenAudioTrack]);
+      } else {
+        await client.publish(screenTrack);
+      }
+
+      screenBtn.innerHTML = "<span>🚫</span> Prekini ekran";
+      screenBtn.classList.add("active");
+      playVideoInCard(client.uid, screenTrack);
+
+      screenTrack.on("track-ended", stopScreenShare);
+    } catch (e) {
+      console.error("Greška pri deljenju ekrana:", e);
+    }
+  } else {
+    stopScreenShare();
+  }
+};
+
+async function stopScreenShare() {
+  if (screenTrack) {
+    try { await client.unpublish(screenTrack); } catch (e) {}
+    screenTrack.stop();
+    screenTrack.close();
+    screenTrack = null;
+  }
+  if (screenAudioTrack) {
+    try { await client.unpublish(screenAudioTrack); } catch (e) {}
+    screenAudioTrack.stop();
+    screenAudioTrack.close();
+    screenAudioTrack = null;
+  }
+  screenBtn.innerHTML = "<span>🖥️</span> Podeli ekran";
+  screenBtn.classList.remove("active");
+  removeVideoFromCard(client.uid);
+}
 
 async function requestWakeLock() {
   try {
@@ -95,6 +159,43 @@ function getDisplayName(uid) {
     : String(uid);
 }
 
+// --- JOIN/LEAVE SOUNDS (WebAudio minimal synth) ---
+const _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function _ensureAudio() {
+  if (_audioCtx.state === "suspended") _audioCtx.resume().catch(() => {});
+}
+function _playTone(freq, duration = 0.5, type = "sine") {
+  try {
+    _ensureAudio();
+    const o = _audioCtx.createOscillator();
+    const g = _audioCtx.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, _audioCtx.currentTime);
+    g.gain.linearRampToValueAtTime(0.12, _audioCtx.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(
+      0.001,
+      _audioCtx.currentTime + duration,
+    );
+    o.connect(g);
+    g.connect(_audioCtx.destination);
+    o.start();
+    o.stop(_audioCtx.currentTime + duration + 0.02);
+  } catch (e) {
+    console.warn("Audio play failed", e);
+  }
+}
+function playJoinSound() {
+  // two quick ascending tones
+  _playTone(660, 0.06);
+  setTimeout(() => _playTone(880, 0.09, "sine"), 70);
+}
+function playLeaveSound() {
+  // single descending tone
+  _playTone(520, 0.14, "sine");
+  setTimeout(() => _playTone(440, 0.12, "sine"), 90);
+}
+
 function drawUser(uid, username, icon, isMe = false) {
   if (document.getElementById(`user-${uid}`)) return;
   const randomIcon =
@@ -126,37 +227,100 @@ function drawUser(uid, username, icon, isMe = false) {
         `;
   grid.appendChild(card);
 }
+// Postavlja video preko avatara i omogućava Fullscreen na klik
+function playVideoInCard(uid, track) {
+  const avatarContainer = document.querySelector(
+    `#user-${uid} .avatar-container`,
+  );
+  if (!avatarContainer) return;
+
+  // Sakrij emoji
+  const avatar = avatarContainer.querySelector(".avatar");
+  if (avatar) avatar.style.display = "none";
+
+  // Napravi video kocku
+  const videoDiv = document.createElement("div");
+  videoDiv.id = `video-wrapper-${uid}`;
+  videoDiv.className = "video-container";
+  videoDiv.title = "Klikni za Fullscreen";
+
+  // Fullscreen na klik (zaustavljamo mutiranje koje se inace desi kad kliknes karticu)
+  videoDiv.onclick = (e) => {
+    e.stopPropagation();
+    if (!document.fullscreenElement) {
+      videoDiv.requestFullscreen().catch((err) => console.log(err));
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  avatarContainer.appendChild(videoDiv);
+  track.play(videoDiv.id);
+}
+
+// Vraća emoji kada se ekran ugasi
+function removeVideoFromCard(uid) {
+  const videoDiv = document.getElementById(`video-wrapper-${uid}`);
+  if (videoDiv) videoDiv.remove();
+
+  const avatar = document.querySelector(`#user-${uid} .avatar`);
+  if (avatar) avatar.style.display = "flex"; // Vrati ikonicu
+}
 
 client.on("user-published", async (user, mediaType) => {
   await client.subscribe(user, mediaType);
+
   if (mediaType === "audio") {
     drawUser(user.uid, getDisplayName(user.uid));
     user.audioTrack.play();
     document.getElementById(`avatar-${user.uid}`)?.classList.remove("muted");
   }
+
+  if (mediaType === "video") {
+    drawUser(user.uid, getDisplayName(user.uid)); // Osiguravamo da kartica postoji
+    playVideoInCard(user.uid, user.videoTrack);
+  }
 });
 
 client.on("user-unpublished", (user, mediaType) => {
-  if (mediaType === "audio")
+  if (mediaType === "audio") {
     document.getElementById(`avatar-${user.uid}`)?.classList.add("muted");
+  }
+  if (mediaType === "video") {
+    removeVideoFromCard(user.uid);
+  }
 });
 
-client.on("user-left", (user) =>
-  document.getElementById(`user-${user.uid}`)?.remove(),
-);
-client.on("user-joined", (user) =>
-  drawUser(user.uid, getDisplayName(user.uid)),
-);
+client.on("user-left", (user) => {
+  playLeaveSound();
+  document.getElementById(`user-${user.uid}`)?.remove();
+});
+client.on("user-joined", (user) => {
+  drawUser(user.uid, getDisplayName(user.uid));
+  // don't play sound for the local user joining (uid 0 or our own id)
+  if (user.uid && String(user.uid) !== String(client.uid)) playJoinSound();
+});
 
 client.enableAudioVolumeIndicator();
 client.on("volume-indicator", (volumes) => {
+  // Skloni animaciju sa svih avatara i video wrappera
   document
-    .querySelectorAll(".avatar.speaking")
-    .forEach((av) => av.classList.remove("speaking"));
+    .querySelectorAll(".avatar.speaking, .video-container.speaking")
+    .forEach((el) => {
+      el.classList.remove("speaking");
+    });
+
   volumes.forEach((vol) => {
     const id = vol.uid === 0 ? client.uid : vol.uid;
-    if (vol.level > 5)
-      document.getElementById(`avatar-${id}`)?.classList.add("speaking");
+    if (vol.level > 5) {
+      // avatar check
+      const avatarEl = document.getElementById(`avatar-${id}`);
+      if (avatarEl) avatarEl.classList.add("speaking");
+
+      // video wrapper check
+      const videoWrapper = document.getElementById(`video-wrapper-${id}`);
+      if (videoWrapper) videoWrapper.classList.add("speaking");
+    }
   });
 });
 
@@ -189,6 +353,7 @@ document.getElementById("join-btn").onclick = async () => {
 
     joinBtn.style.display = "none";
     document.getElementById("leave-btn").style.display = "flex";
+    document.getElementById("screen-btn").style.display = "flex";
     const s = document.getElementById("status");
     s.innerText = "Povezan • Live";
     s.style.color = "#4ade80";
