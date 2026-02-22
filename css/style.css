@@ -93,6 +93,11 @@ body {
   .video-toggle {
     display: none !important;
   }
+  /* Hide screen share button on mobile to prevent UI clutter */
+  .screen-btn,
+  #screen-btn {
+    display: none !important;
+  }
   body {
     /* Deep rich gradient for mobile */
     background: radial-gradient(
@@ -157,11 +162,11 @@ h2 {
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 24px;
   padding: 15px;
-  width: 100px;
+  width: 110px; 
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   position: relative;
-  overflow: hidden;
+  overflow: visible; 
 }
 
 .user-card:hover {
@@ -175,10 +180,17 @@ h2 {
   transform: scale(0.95);
 }
 
+/* --- KONTEJNER --- */
 .avatar-container {
   position: relative;
+  width: 70px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+/* --- VRAĆEN STARI AVATAR --- */
 .avatar {
   width: 70px;
   height: 70px;
@@ -195,6 +207,8 @@ h2 {
   box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.02);
   transition: 0.3s;
   border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  z-index: 1;
 }
 
 .avatar.muted {
@@ -260,6 +274,16 @@ h2 {
   background: rgba(239, 68, 68, 0.2);
   color: white;
 }
+.screen-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  display: none;
+}
+.screen-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: white;
+}
 
 /* --- ANIMATIONS & INDICATORS --- */
 @keyframes neonPulse {
@@ -277,10 +301,13 @@ h2 {
   }
 }
 
+/* --- INDIKACIJA ZVUKA --- */
 .speaking {
-  animation: neonPulse 1.5s infinite;
+  animation: neonPulse 1.5s infinite !important;
   transform: scale(1.05);
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(16, 185, 129, 0.2) !important;
+  border: 2px solid #10b981 !important;
+  z-index: 2; 
 }
 
 @keyframes slideDown {
@@ -328,4 +355,55 @@ h2 {
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 0 10px white;
+}
+
+/* --- OSNOVNI VIDEO --- */
+.video-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 70px;
+  height: 70px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #000;
+  cursor: pointer;
+  z-index: 10;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+}
+
+.video-container video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+/* --- FULLSCREEN (CEO EKRAN) --- */
+/* Standardni pregledači */
+.video-container:fullscreen {
+  border-radius: 0 !important;
+  background: #000 !important;
+}
+.video-container:fullscreen video {
+  object-fit: contain !important; 
+}
+
+/* Chrome, Safari, Edge, Opera */
+.video-container:-webkit-full-screen {
+  border-radius: 0 !important;
+  background: #000 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+}
+.video-container:-webkit-full-screen video {
+  object-fit: contain !important; 
+}
+
+/* Firefox */
+.video-container:-moz-full-screen {
+  border-radius: 0 !important;
+  background: #000 !important;
+}
+.video-container:-moz-full-screen video {
+  object-fit: contain !important; 
 }
