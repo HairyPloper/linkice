@@ -951,7 +951,7 @@ if (chatContainer && dragHandle) {
 
 window.askAI = async (prompt) => {
   const API_KEY = "AIzaSyDfBs1B8K1k6OJPP7YYygwf9qcXBgdy9ns";
-  const URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+  const URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
 
   // 1. Prikaži lokalnu poruku korisniku da AI razmišlja
   const tempId = "ai-loading-" + Date.now();
