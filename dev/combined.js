@@ -444,118 +444,116 @@ function escapeHtml(str) {
 // --- FUNKCIJA ZA PRIKAZ PORUKA ---
 window.appendMessage = (
   name,
-  text,
+  text = "",
   color = "#4ade80",
   snapshotKey = null,
   data = null,
 ) => {
-  if (typeof text === "undefined" || text === null) text = "";
+  if (!chatMessages) return;
+
+  let timeString = "";
+  if (data && data.timestamp) {
+    const date = new Date(data.timestamp);
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    timeString = `<span class="chat-time" style="font-size: 0.75rem; opacity: 0.5; margin-right: 5px;">${hours}:${minutes}</span>`;
+  }
 
   const msgDiv = document.createElement("div");
   msgDiv.className = "chat-msg";
 
-  // 1. RENDER ANKETE (POLL)
+  const isMe = data && data.username === window.myUsername;
+  msgDiv.style.alignSelf = isMe ? "flex-end" : "flex-start";
+  if (isMe) msgDiv.style.backgroundColor = "rgba(74, 222, 128, 0.1)";
+  msgDiv.style[isMe ? "borderRight" : "borderLeft"] = `3px solid ${color}`;
+
   if (data && data.type === "poll") {
-    const safeName = escapeHtml(name);
-    const safeQuestion = escapeHtml(data.question || "");
-
-    msgDiv.innerHTML = `<b style="color: ${color}">${safeName} je pokrenuo anketu:</b><br>`;
-    const qDiv = document.createElement("div");
-    qDiv.style.cssText = "margin: 10px 0; font-size: 1.1rem; font-weight: bold; color: white;";
-    qDiv.textContent = safeQuestion;
-    msgDiv.appendChild(qDiv);
-
-    if (data.options) {
-      data.options.forEach((opt) => {
-        const count = (data.votes && data.votes[opt]) ? data.votes[opt] : 0;
-        const button = document.createElement("button");
-        button.className = "poll-btn";
-        button.type = "button";
-
-        const spanText = document.createElement("span");
-        spanText.className = "opt-text";
-        spanText.textContent = opt;
-
-        const spanCount = document.createElement("span");
-        spanCount.className = "opt-count";
-        spanCount.id = `count-${snapshotKey}-${encodeURIComponent(opt)}`;
-        spanCount.textContent = count;
-
-        button.appendChild(spanText);
-        button.appendChild(spanCount);
-        button.addEventListener("click", () => {
-          if (typeof window.vote === "function") window.vote(snapshotKey, opt);
-        });
-
-        msgDiv.appendChild(button);
-      });
-    }
-
-    if (chatMessages) chatMessages.appendChild(msgDiv);
-    if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
-    return; // Prekidamo ovde jer je ovo anketa
+    renderPoll(msgDiv, snapshotKey, data, color, timeString);
+  } else {
+    renderStandardMessage(msgDiv, name, text, color, timeString);
   }
 
-  // 2. OBRADA LINKOVA I MULTIMEDIJE
+  chatMessages.appendChild(msgDiv);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  setTimeout(() => {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }, 200);
+};
+
+function renderStandardMessage(msgDiv, name, text, color, timeString) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const safeText = escapeHtml(text);
-  let formattedText = safeText.replace(urlRegex, (url) => {
-    const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(url);
-    const isVideo = /\.(mp4|webm|ogg)$/i.test(url);
-    const isAudio = /\.(mp3|wav)$/i.test(url);
-    const isDoc = /\.(zip|rar|7z|pdf|doc|docx|txt)$/i.test(url);
-    const ytMatch = url.match(
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
-    );
-    const spotifyMatch = url.match(
-      /open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/,
-    );
 
-    if (isImage) {
-      return `<a href="${url}" target="_blank" style="color: #4ade80;">${url}</a>
-              <img src="${url}" style="max-width: 100%; border-radius: 8px; margin-top: 5px; display: block;" />`;
-    } else if (isVideo) {
-      return `<a href="${url}" target="_blank" style="color: #4ade80;">Video: ${url}</a>
-            <video controls style="max-width: 100%; border-radius: 8px; margin-top: 5px; display: block;">
-                <source src="${url}" type="video/mp4">
-            </video>`;
-    } else if (isAudio) {
-      return `<a href="${url}" target="_blank" style="color: #4ade80;">Audio: ${url}</a>
-            <audio controls style="width: 100%; margin-top: 5px; display: block;">
-                <source src="${url}">
-            </audio>`;
-    } else if (isDoc) {
-      return `<div style="margin-top: 5px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; border: 1px dashed #4ade80;">
-                  <span style="font-size: 1.2em;">📁</span> 
-                  <a href="${url}" target="_blank" style="color: #4ade80; font-weight: bold;">Preuzmi fajl (${url.split("/").pop()})</a>
-                </div>`;
-    } else if (ytMatch) {
-      return `<a href="${url}" target="_blank" style="color: #4ade80;">${url}</a>
-              <div style="position: relative; padding-bottom: 56.25%; height: 0; margin-top: 5px;">
-                  <iframe src="https://www.youtube.com/embed/${ytMatch[1]}" style="position: absolute; width: 100%; height: 100%; border:0; border-radius: 8px;" allowfullscreen></iframe>
-              </div>`;
-    } else if (spotifyMatch) {
-      const type = spotifyMatch[1];
-      const id = spotifyMatch[2];
-      const embedUrl = `https://open.spotify.com/embed/${type}/${id}`;
-      return `<iframe src="${embedUrl}" width="100%" height="80" frameborder="0" allowtransparency="true" allow="encrypted-media" style="border-radius: 12px; margin-top: 8px; display: block;"></iframe>`;
-    }
-    return `<a href="${url}" target="_blank" style="color: #4ade80; text-decoration: underline;">${url}</a>`;
-  });
+  // Zamena linkova medijima
+  const formattedText = safeText.replace(urlRegex, (url) =>
+    formatMediaLinks(url),
+  );
 
-  // 3. VELIKI EMOJIJI (Ako nema drugog teksta)
+  // Emoji provera
   const onlyEmojiRegex =
     /^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff]|\s)+$/;
   const emojiClass = onlyEmojiRegex.test(text) ? "large-emoji" : "";
-  const safeName = escapeHtml(name);
 
-  msgDiv.innerHTML = `<b style="color: ${color}">${safeName}: </b><span class="${emojiClass}">${formattedText}</span>`;
-  if (chatMessages) chatMessages.appendChild(msgDiv);
+  msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${escapeHtml(name)}: </b><span class="${emojiClass}">${formattedText}</span>`;
+}
 
-  setTimeout(() => {
-    if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
-  }, 200);
-};
+function formatMediaLinks(url) {
+  if (/\.(jpeg|jpg|gif|png|webp)$/i.test(url)) {
+    return `<a href="${url}" target="_blank" style="color: #4ade80;">${url}</a>
+                <img src="${url}" style="max-width: 100%; border-radius: 8px; margin-top: 5px; display: block;" />`;
+  }
+  if (/\.(mp4|webm|ogg)$/i.test(url)) {
+    return `<video controls style="max-width: 100%; border-radius: 8px; margin-top: 5px; display: block;">
+                    <source src="${url}" type="video/mp4">
+                </video>`;
+  }
+  if (/\.(mp3|wav)$/i.test(url)) {
+    return `<audio controls style="width: 100%; margin-top: 5px; display: block;"><source src="${url}"></audio>`;
+  }
+  const ytMatch = url.match(
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+  );
+  if (ytMatch) {
+    return `<div style="position: relative; padding-bottom: 56.25%; height: 0; margin-top: 5px;">
+                    <iframe src="https://www.youtube.com/embed/${ytMatch[1]}" style="position: absolute; width: 100%; height: 100%; border:0; border-radius: 8px;" allowfullscreen></iframe>
+                </div>`;
+  }
+  const spotifyMatch = url.match(
+    /open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/,
+  );
+  if (spotifyMatch) {
+    const type = spotifyMatch[1];
+    const id = spotifyMatch[2];
+    const embedUrl = `https://open.spotify.com/embed/${type}/${id}`;
+    return `<iframe src="${embedUrl}" width="100%" height="80" frameborder="0" allowtransparency="true" allow="encrypted-media" style="border-radius: 12px; margin-top: 8px; display: block;"></iframe>`;
+  }
+  return `<a href="${url}" target="_blank" style="color: #4ade80; text-decoration: underline;">${url}</a>`;
+}
+
+function renderPoll(msgDiv, snapshotKey, data, color, timeString) {
+  const safeName = escapeHtml(data.username);
+  const safeQuestion = escapeHtml(data.question || "");
+
+  msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${safeName} je pokrenuo anketu:</b><br>`;
+  const qDiv = document.createElement("div");
+  qDiv.style.cssText =
+    "margin: 10px 0; font-size: 1.1rem; font-weight: bold; color: white;";
+  qDiv.textContent = safeQuestion;
+  msgDiv.appendChild(qDiv);
+
+  if (data.options) {
+    data.options.forEach((opt) => {
+      const count = data.votes && data.votes[opt] ? data.votes[opt] : 0;
+      const button = document.createElement("button");
+      button.className = "poll-btn";
+      button.innerHTML = `<span class="opt-text">${escapeHtml(opt)}</span>
+                                <span class="opt-count" id="count-${snapshotKey}-${encodeURIComponent(opt)}">${count}</span>`;
+      button.onclick = () => window.vote && window.vote(snapshotKey, opt);
+      msgDiv.appendChild(button);
+    });
+  }
+}
 
 // --- SLANJE PORUKA ---
 window.sendMessage = async () => {
@@ -701,8 +699,11 @@ chatRef.limitToLast(50).on("child_added", (snapshot) => {
 
   // Privatne poruke
   if (data.type === "private") {
-    const isMeSender = (data.username || "").toLowerCase() === (window.myUsername || "").toLowerCase();
-    const isMeTarget = (data.to || "").toLowerCase() === (window.myUsername || "").toLowerCase();
+    const isMeSender =
+      (data.username || "").toLowerCase() ===
+      (window.myUsername || "").toLowerCase();
+    const isMeTarget =
+      (data.to || "").toLowerCase() === (window.myUsername || "").toLowerCase();
     if (isMeSender || isMeTarget) {
       const prefix = isMeSender
         ? `[privatna za ${escapeHtml(data.to || "")}]`
@@ -727,7 +728,9 @@ chatRef.on("child_changed", (snapshot) => {
   const data = snapshot.val();
   if (data && data.type === "poll" && Array.isArray(data.options)) {
     data.options.forEach((opt) => {
-      const el = document.getElementById(`count-${snapshot.key}-${encodeURIComponent(opt)}`);
+      const el = document.getElementById(
+        `count-${snapshot.key}-${encodeURIComponent(opt)}`,
+      );
       if (el) el.innerText = data.votes && (data.votes[opt] || 0);
     });
   }
@@ -762,16 +765,19 @@ async function uploadFile(file) {
       method: "POST",
       body: formData,
     });
-    
+
     const fileUrl = await response.text();
-    return fileUrl ? fileUrl.trim() : null; 
+    return fileUrl ? fileUrl.trim() : null;
   } catch (e) {
     console.error("Direktan upload nije uspeo, pokušavam preko proxy-ja...", e);
     try {
-      const proxyRes = await fetch("https://corsproxy.io/?https://catbox.moe/user/api.php", {
-        method: "POST",
-        body: formData,
-      });
+      const proxyRes = await fetch(
+        "https://corsproxy.io/?https://catbox.moe/user/api.php",
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
       return (await proxyRes.text()).trim();
     } catch (err) {
       return null;
@@ -794,16 +800,21 @@ async function handleFileUpload(file) {
   } else {
     const errorDetail = fileUrl || "Problem sa serverom";
     if (window.appendMessage)
-      window.appendMessage("Sistem", `Greška pri slanju: ${errorDetail}`, "#f87171");
+      window.appendMessage(
+        "Sistem",
+        `Greška pri slanju: ${errorDetail}`,
+        "#f87171",
+      );
   }
 }
 
 // --- PASTE PODRŠKA ---
 if (chatInput) {
   chatInput.onpaste = async (e) => {
-    const items = e.clipboardData && e.clipboardData.items ? e.clipboardData.items : [];
+    const items =
+      e.clipboardData && e.clipboardData.items ? e.clipboardData.items : [];
     for (let item of items) {
-      if (item.kind === 'file') {
+      if (item.kind === "file") {
         const file = item.getAsFile();
         if (file) handleFileUpload(file);
       }
@@ -813,17 +824,18 @@ if (chatInput) {
   // --- DRAG & DROP PODRŠKA ---
   chatInput.ondrop = async (e) => {
     e.preventDefault();
-    e.stopPropagation(); 
+    e.stopPropagation();
     chatInput.classList.remove("drag-active");
-    
-    const files = e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : null;
+
+    const files =
+      e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : null;
     if (files && files.length > 0) {
       handleFileUpload(files[0]);
     }
   };
 
   chatInput.ondragover = (e) => {
-    e.preventDefault(); 
+    e.preventDefault();
     chatInput.style.background = "rgba(74, 222, 128, 0.05)";
     chatInput.classList.add("drag-active");
   };
@@ -833,7 +845,6 @@ if (chatInput) {
     chatInput.classList.remove("drag-active");
   };
 }
-
 
 if (chatInput) {
   chatInput.oninput = () => {
@@ -876,16 +887,16 @@ window.applyCommand = (cmd) => {
 };
 
 if (emojiBtn && emojiPicker) {
-    emojiBtn.onclick = (e) => {
-        e.stopPropagation();
-        emojiPicker.classList.toggle("hidden");
-    };
+  emojiBtn.onclick = (e) => {
+    e.stopPropagation();
+    emojiPicker.classList.toggle("hidden");
+  };
 
-    document.addEventListener('click', (e) => {
-        if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
-            emojiPicker.classList.add("hidden");
-        }
-    });
+  document.addEventListener("click", (e) => {
+    if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
+      emojiPicker.classList.add("hidden");
+    }
+  });
 }
 
 window.addEmoji = (emoji) => {
@@ -900,18 +911,26 @@ window.addEmoji = (emoji) => {
 };
 
 if (chatContainer && dragHandle) {
-    let x = 0, y = 0, initialX = 0, initialY = 0;
-    dragHandle.onmousedown = (e) => {
-        if (e.button !== 0) return;
-        initialX = e.clientX; initialY = e.clientY;
-        document.onmousemove = (e) => {
-            x = initialX - e.clientX; y = initialY - e.clientY;
-            initialX = e.clientX; initialY = e.clientY;
-            chatContainer.style.top = (chatContainer.offsetTop - y) + "px";
-            chatContainer.style.left = (chatContainer.offsetLeft - x) + "px";
-            chatContainer.style.bottom = "auto";
-            chatContainer.style.right = "auto";
-        };
-        document.onmouseup = () => { document.onmousemove = null; };
+  let x = 0,
+    y = 0,
+    initialX = 0,
+    initialY = 0;
+  dragHandle.onmousedown = (e) => {
+    if (e.button !== 0) return;
+    initialX = e.clientX;
+    initialY = e.clientY;
+    document.onmousemove = (e) => {
+      x = initialX - e.clientX;
+      y = initialY - e.clientY;
+      initialX = e.clientX;
+      initialY = e.clientY;
+      chatContainer.style.top = chatContainer.offsetTop - y + "px";
+      chatContainer.style.left = chatContainer.offsetLeft - x + "px";
+      chatContainer.style.bottom = "auto";
+      chatContainer.style.right = "auto";
     };
+    document.onmouseup = () => {
+      document.onmousemove = null;
+    };
+  };
 }
