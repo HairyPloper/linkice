@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="sr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Linkice</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔗</text></svg>"
+    />
+
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.11.0.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/emoji-mart@latest/dist/browser.js"></script>
+
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div class="video-background">
+      <div class="video-overlay"></div>
+      <video loop muted playsinline preload="auto" id="bgVideo">
+        <source
+          src="https://us-west-2-epicgames.graphassets.com/cmkr1i7c9047e07n0es5291ez/cmis28lk91sq907mv9aydajlk"
+          type="video/mp4"
+        />
+      </video>
+    </div>
+
+    <audio loop id="myAudio">
+      <source src="src/nemoj.mp3" type="audio/mpeg" />
+    </audio>
+
+    <button
+      id="audioToggle"
+      class="video-toggle"
+      title="Muzika"
+      style="bottom: 60px"
+    >
+      🎵
+    </button>
+    <button
+      id="videoToggle"
+      class="video-toggle"
+      title="Uključi/Isključi video"
+    >
+      🎬
+    </button>
+    <button
+      id="snowToggle"
+      class="video-toggle"
+      title="Uključi/Isključi pahuljicu"
+      style="bottom: 100px"
+    >
+      ❄️
+    </button>
+
+    <div class="header">
+      <h2>LINKICE 🔗</h2>
+      <div
+        id="status"
+        style="
+          margin-top: 5px;
+          font-size: 0.8rem;
+          color: #cbd5e1;
+          font-weight: 300;
+        "
+      >
+        Spremno
+      </div>
+    </div>
+
+    <div id="user-grid"></div>
+
+    <div class="controls">
+      <button id="join-btn" class="btn join-btn"><span>🚀</span> Upadni</button>
+      <button id="screen-btn" class="btn screen-btn" style="display: none">
+        <span>🖥️</span> Podeli ekran
+      </button>
+      <button id="leave-btn" class="btn leave-btn" style="display: none">
+        <span>👋</span> Ćaoo drugaryy
+      </button>
+    </div>
+
+    <div id="chat-container">
+      <div
+        id="chat-header"
+        style="
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          padding: 10px;
+          background: rgba(0, 0, 0, 0.2);
+          border-radius: 12px 12px 0 0;
+        "
+      >
+        <div
+          id="chat-drag-handle"
+          style="cursor: grab; padding: 5px; color: #4ade80; display: flex"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="9" cy="5" r="1"></circle>
+            <circle cx="9" cy="12" r="1"></circle>
+            <circle cx="9" cy="19" r="1"></circle>
+            <circle cx="15" cy="5" r="1"></circle>
+            <circle cx="15" cy="12" r="1"></circle>
+            <circle cx="15" cy="19" r="1"></circle>
+          </svg>
+        </div>
+      </div>
+      <div id="chat-messages"></div>
+      <div id="autocomplete-menu" style="display: none"></div>
+
+      <div class="chat-input-wrapper">
+        <input
+          type="text"
+          id="chat-input"
+          placeholder="Tekst..."
+          autocomplete="off"
+        />
+        <div class="emoji-wrapper">
+          <button id="emoji-btn" type="button" class="chat-action-btn">
+            😀
+          </button>
+          <div id="emoji-picker" class="hidden">
+            <span onclick="addEmoji('😀')">😀</span>
+            <span onclick="addEmoji('🤣')">🤣</span>
+            <span onclick="addEmoji('🔥')">🔥</span>
+            <span onclick="addEmoji('👍')">👍</span>
+            <span onclick="addEmoji('❤️')">❤️</span>
+            <span onclick="addEmoji('🇵🇰')">🇵🇰</span>
+            <span onclick="addEmoji('🛌🏽')">🛌🏽</span>
+            <span onclick="addEmoji('👨‍🦽‍➡️')">👨‍🦽‍➡️</span>
+            <span onclick="addEmoji('💩')">💩</span>
+          </div>
+        </div>
+        <button id="send-btn">💬</button>
+      </div>
+    </div>
+
+    <script>
+      const firebaseConfig = {
+        databaseURL:
+          "https://voice-room-web-default-rtdb.europe-west1.firebasedatabase.app",
+      };
+      firebase.initializeApp(firebaseConfig);
+      window.CHANNEL = "Linkice";
+      window.commands = [
+        { cmd: "/clear", desc: "Očisti čet" },
+        { cmd: "/nick", desc: "Promeni ime /nick {ime}" },
+        { cmd: "/roll", desc: "Baci kockicu /roll {num}" },
+        { cmd: "/ping", desc: "Ping test Agora" },
+        { cmd: "/msg", desc: "Privatna poruka /msg {ime} {poruka}" },
+        {
+          cmd: "/poll",
+          desc: "Kreiraj anketu /poll {pitanje}, {opcija 1}, {opcija 2} ...",
+        },
+        { cmd: "/help", desc: "Pomoć" },
+      ];
+    </script>
+
+  </body>
+</html>
