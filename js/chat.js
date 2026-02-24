@@ -191,6 +191,18 @@ function handleCommand(text) {
         text: `🎲 **${window.myUsername}** rola: **${Math.floor(Math.random() * max) + 1}** (1-${max})`,
       });
       return true;
+    case "/ai":
+      const prompt = args.slice(1).join(" ");
+      if (!prompt) {
+        window.appendMessage(
+          "Sistem",
+          "Upišite pitanje, npr: /ai Koliko je 2+2?",
+          "#ef4444",
+        );
+      } else {
+        window.askAI(prompt);
+      }
+      return true;
     case "/poll":
       const pollData = args.slice(1).join(" ").split(",");
       if (pollData.length < 2) {
@@ -258,15 +270,17 @@ function handleCommand(text) {
       const helpHtml = `
             <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border: 1px solid rgba(74, 222, 128, 0.3);">
               <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 0.85rem;">
-                <code style="color: #fbbf24;">/nick Ime</code> <span>Promena imena</span>
-                <code style="color: #fbbf24;">/poll P, O1, O2</code> <span>Anketa</span>
-                <code style="color: #fbbf24;">/roll 100</code> <span>Kockica</span>
-                <code style="color: #fbbf24;">/clear</code> <span>Očisti čet</span>
-                <code style="color: #fbbf24;">/ping</code> <span>Ping test Agora</span>
-                <code style="color: #fbbf24;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
+                <code style="color: #fbbf24;text-align: left;">/nick Ime</code> <span>Promena imena</span>
+                <code style="color: #fbbf24;text-align: left;">/poll P, O1, O2</code> <span>Anketa</span>
+                <code style="color: #fbbf24;text-align: left;">/roll 100</code> <span>Kockica</span>
+                <code style="color: #fbbf24;text-align: left;">/clear</code> <span>Očisti čet</span>
+                <code style="color: #fbbf24;text-align: left;">/ping</code> <span>Ping test Agora</span>
+                <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
+                <code style="color: #fbbf24;text-align: left;">/ai {pitanje}</code> <span>Postavi pitanje AI-ju</span>
               </div>
             </div>`;
-      window.appendMessage("Sistem", helpHtml, "#4ade80");
+      window.appendSystemHTML(helpHtml);
+      // window.appendMessage("Sistem", helpHtml, "#4ade80");
       return true;
     default:
       return false;
@@ -517,3 +531,52 @@ if (chatContainer && dragHandle) {
     };
   };
 }
+
+window.askAI = async (prompt) => {
+    const API_KEY = "AIzaSyBan19EJ9nIdXDGhv-LhcOlGuhQWmcH_zo";
+    const URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
+    // 1. Prikaži lokalnu poruku korisniku da AI razmišlja
+    const tempId = "ai-loading-" + Date.now();
+    window.appendMessage("🤖 AI Asistent", "Razmišljam...", "#fbbf24", tempId, { username: "🤖 AI Asistent" });
+
+    try {
+        const response = await fetch(URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }]
+            })
+        });
+
+        if (!response.ok) throw new Error("API limit ili greška");
+
+        const data = await response.json();
+        const aiText = data.candidates[0].content.parts[0].text;
+
+        // 2. Obriši "Razmišljam..." poruku (opciono, ili samo pošalji novu)
+        // Šaljemo zvaničan odgovor u Firebase da bi ga SVI u čatu videli
+        chatRef.push({
+            username: "🤖 Gemini AI",
+            text: aiText,
+            color: "#fbbf24",
+            timestamp: Date.now()
+        });
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        window.appendMessage("Sistem", "AI trenutno nije dostupan (proveri API ključ ili limit).", "#ef4444");
+    }
+};
+
+window.appendSystemHTML = (htmlContent) => {
+    const msgDiv = document.createElement("div");
+    msgDiv.className = "chat-msg system-msg";
+    msgDiv.style.alignSelf = "center"; // Centriraj sistemske poruke
+    msgDiv.style.width = "90%";
+    
+    msgDiv.innerHTML = `<b style="color: #60a5fa">Sistem:</b><br>${htmlContent}`;
+    
+    chatMessages.appendChild(msgDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+};
