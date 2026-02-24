@@ -1,4 +1,4 @@
-name: Optimize and Deploy
+name: Deploy to GitHub Pages (with Branch Logic)(minified)
 on:
   push:
     branches: [ main, dev_b ] # Triggers on both live and testing branches
