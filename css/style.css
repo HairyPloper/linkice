@@ -460,11 +460,22 @@ h2 {
   padding: 8px 12px;
   border-radius: 12px;
   width: fit-content;
-  max-width: 90%;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  word-wrap: break-word;
+  max-width: 85%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+  line-height: 1.5;
+
   overflow-wrap: break-word;
-  word-break: break-all;
+  word-wrap: break-word;
+  word-break: break-word;
+
+  transition: background 0.2s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-msg:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .chat-msg a {
@@ -493,6 +504,13 @@ h2 {
   padding: 8px;
   color: white;
   outline: none;
+}
+.chat-time {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4); /* Bledunjavo bela */
+  margin-right: 8px;
+  font-family: monospace;
+  vertical-align: middle;
 }
 
 #send-btn {
@@ -635,11 +653,11 @@ h2 {
 }
 
 #chat-drag-handle {
-    opacity: 0.6;
-    transition: opacity 0.2s;
+  opacity: 0.6;
+  transition: opacity 0.2s;
 }
 
 #chat-drag-handle:hover {
-    opacity: 1;
-    color: #4ade80; 
+  opacity: 1;
+  color: #4ade80;
 }
