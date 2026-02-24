@@ -478,7 +478,7 @@ h2 {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.chat-msg a {
+.chat-msg > a {
   color: var(--accent-color) !important;
 }
 
@@ -661,3 +661,147 @@ h2 {
   opacity: 1;
   color: #4ade80;
 }
+/* === MEDIA CARDS === */
+.media-card {
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  max-width: 100%;
+  transition: border-color 0.2s;
+}
+.media-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+/* Slika */
+.media-img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  display: block;
+  cursor: zoom-in;
+  border-radius: 14px 14px 0 0;
+}
+
+/* Video */
+.media-video {
+  width: 100%;
+  max-height: 240px;
+  display: block;
+  background: #000;
+  border-radius: 14px 14px 0 0;
+}
+
+/* Link ispod medija */
+.media-link {
+  display: block;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  color: #818cf8;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.media-link:hover { color: #a5b4fc; }
+
+/* Audio */
+.media-card--audio {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+.media-audio-icon { font-size: 1.8rem; }
+.media-audio-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.media-audio-name {
+  font-size: 0.8rem;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-audio {
+  width: 100%;
+  height: 32px;
+  accent-color: #6366f1;
+}
+
+/* Dokument */
+.media-card--doc {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.media-doc-icon { font-size: 1.8rem; flex-shrink: 0; }
+.media-doc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.media-doc-name {
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-doc-ext {
+  font-size: 0.7rem;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.media-doc-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: opacity 0.2s;
+}
+.media-doc-btn:hover { opacity: 0.85; }
+
+/* YouTube */
+.media-card--yt { padding-bottom: 0; width: 320px; max-width: 100%; }
+.media-yt-wrap {
+  position: relative;
+  padding-bottom: 56.25%;
+  height: 0;
+}
+.media-yt {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  border: none;
+  border-radius: 14px 14px 0 0;
+}
+
+/* Spotify */
+.media-card--spotify { padding: 8px; }
+.media-spotify { border-radius: 10px; display: block; }
+
+/* Obični link */
+.media-link-plain {
+  color: #818cf8;
+  text-decoration: none;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+.media-link-plain:hover { color: #a5b4fc; text-decoration: underline; }

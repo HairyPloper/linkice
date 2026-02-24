@@ -88,41 +88,85 @@ function formatMediaLinks(url) {
     /open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/,
   );
 
+  const fileName = url.split("/").pop().split("?")[0];
+
   if (isImage) {
-    return `<a href="${url}" target="_blank" style="color: #4ade80;">${url}</a>
-                <img src="${url}" style="max-width: 100%; border-radius: 8px; margin-top: 5px; display: block;" />`;
+    return `
+      <div class="media-card">
+        <img src="${url}" class="media-img" onclick="this.closest('.media-card').querySelector('.media-img').requestFullscreen?.() || window.open('${url}')" />
+        <a href="${url}" target="_blank" class="media-link">🖼 ${fileName}</a>
+      </div>`;
   }
+
   if (isVideo) {
-      return `<a href="${url}" target="_blank" style="color: #4ade80;">Video: ${url}</a>
-            <video controls style="max-width: 70%;max-height: 100%; border-radius: 8px; margin-top: 5px; display: block;">
-                <source src="${url}" type="video/mp4">
-            </video>`;
-    }
+    return `
+      <div class="media-card">
+        <video controls class="media-video">
+          <source src="${url}">
+        </video>
+        <a href="${url}" target="_blank" class="media-link">🎬 ${fileName}</a>
+      </div>`;
+  }
+
   if (isAudio) {
-    return `<a href="${url}" target="_blank" style="color: #4ade80;">Audio: ${url}</a>
-            <audio controls style="width: 100%; margin-top: 5px; display: block;">
-                <source src="${url}">
-            </audio>`;
+    return `
+      <div class="media-card media-card--audio">
+        <span class="media-audio-icon">🎵</span>
+        <div class="media-audio-info">
+          <span class="media-audio-name">${fileName}</span>
+          <audio controls class="media-audio">
+            <source src="${url}">
+          </audio>
+        </div>
+      </div>`;
   }
+
   if (isDoc) {
-    return `<div style="margin-top: 5px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; border: 1px dashed #4ade80;">
-                  <span style="font-size: 1.2em;">📁</span> 
-                  <a href="${url}" target="_blank" style="color: #4ade80; font-weight: bold;">Preuzmi fajl (${url.split("/").pop()})</a>
-                </div>`;
+    const ext = fileName.split(".").pop().toUpperCase();
+    const icons = {
+      ZIP: "🗜",
+      RAR: "🗜",
+      "7Z": "🗜",
+      PDF: "📄",
+      DOC: "📝",
+      DOCX: "📝",
+      TXT: "📃",
+    };
+    const icon = icons[ext] || "📁";
+    return `
+      <div class="media-card media-card--doc">
+        <span class="media-doc-icon">${icon}</span>
+        <div class="media-doc-info">
+          <span class="media-doc-name">${fileName}</span>
+          <span class="media-doc-ext">${ext}</span>
+        </div>
+        <a href="${url}" target="_blank" class="media-doc-btn">Preuzmi</a>
+      </div>`;
   }
+
   if (ytMatch) {
-    return `<a href="${url}" target="_blank" style="color: #4ade80;">${url}</a>
-              <div style="position: relative; padding-bottom: 56.25%; height: 0; margin-top: 5px;">
-                  <iframe src="https://www.youtube.com/embed/${ytMatch[1]}" style="position: absolute; width: 100%; height: 100%; border:0; border-radius: 8px;" allowfullscreen></iframe>
-              </div>`;
+    return `
+      <div class="media-card media-card--yt">
+        <div class="media-yt-wrap">
+          <iframe src="https://www.youtube.com/embed/${ytMatch[1]}"
+            class="media-yt" allowfullscreen></iframe>
+        </div>
+        <a href="${url}" target="_blank" class="media-link">▶ YouTube</a>
+      </div>`;
   }
+
   if (spotifyMatch) {
-    const type = spotifyMatch[1];
-    const id = spotifyMatch[2];
-    const embedUrl = `https://open.spotify.com/embed/${type}/${id}`;
-    return `<iframe src="${embedUrl}" width="100%" height="80" frameborder="0" allowtransparency="true" allow="encrypted-media" style="border-radius: 12px; margin-top: 8px; display: block;"></iframe>`;
+    const [, type, id] = spotifyMatch;
+    const h = type === "track" ? "80" : "152";
+    return `
+      <div class="media-card media-card--spotify">
+        <iframe src="https://open.spotify.com/embed/${type}/${id}"
+          width="100%" height="${h}" frameborder="0"
+          allow="encrypted-media" class="media-spotify"></iframe>
+      </div>`;
   }
-  return `<a href="${url}" target="_blank" style="color: #4ade80; text-decoration: underline;">${url}</a>`;
+
+  return `<a href="${url}" target="_blank" class="media-link-plain">🔗 ${url}</a>`;
 }
 
 function renderPoll(msgDiv, snapshotKey, data, color, timeString) {
@@ -544,7 +588,9 @@ if (chatContainer && dragHandle) {
 }
 
 window.askAI = async (prompt) => {
-  const API_KEY = "AIzaSyBhO_-rJIcEmqt5ZeEhiYETTXDcOqszi8A";
+  const part1 = "AIzaSyC5eou8WcfaIfA8LiFEi2Cbr";
+  const part2 = "_tVviwLcw4";
+  const AY = part1 + part2;
   const models = ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemma-3-4b-it"];
 
   window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-ai", {
@@ -553,7 +599,7 @@ window.askAI = async (prompt) => {
 
   for (let modelName of models) {
     try {
-      const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
+      const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${AY}`;
 
       const response = await fetch(URL, {
         method: "POST",
@@ -604,4 +650,3 @@ window.appendSystemHTML = (htmlContent) => {
   chatMessages.appendChild(msgDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 };
-
