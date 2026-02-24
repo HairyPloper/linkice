@@ -1,7 +1,7 @@
 name: Deploy to GitHub Pages (with Branch Logic)(minified)
 on:
   push:
-    branches: [ main, dev_b ] # Triggers on both live and testing branches
+    branches: [main, dev_b] # Triggers on both live and testing branches
 
 jobs:
   build-and-deploy:
@@ -13,7 +13,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: "18"
 
       - name: Install Minifier
         run: npm install -g terser
@@ -21,8 +21,22 @@ jobs:
       - name: Build Assets
         run: |
           mkdir -p dist/js
-          cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js > dist/combined.js
-          terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
+
+          # Check if the JS files exist before trying to merge them
+          if [ -f js/main.js ] && [ -f js/utils.js ]; then
+            echo "New version detected: Bundling files..."
+            cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js > dist/combined.js
+            terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
+            
+            # Update HTML only if we bundled
+            sed -i '/<script src="js\/main.js"><\/script>/i <script src="js/bundle.min.js"></script>' index.html
+            sed -i '/js\/.*\.js/d' index.html
+          else
+            echo "Old version detected: Copying files as-is..."
+            cp -r js dist/ || true
+          fi
+
+          # Copy everything else
           cp index.html dist/index.html
           cp -r css dist/css || true
           cp -r src dist/src || true
@@ -39,6 +53,6 @@ jobs:
           branch: gh-pages
           # Logic: If branch is main, deploy to root. If dev_b, deploy to 'dev' folder.
           target-folder: ${{ github.ref == 'refs/heads/main' && '/' || 'dev' }}
-          # Logic: Only delete old files if we are updating the root (main). 
+          # Logic: Only delete old files if we are updating the root (main).
           # This prevents the 'dev' deployment from wiping the 'main' site.
           clean: ${{ github.ref == 'refs/heads/main' }}
