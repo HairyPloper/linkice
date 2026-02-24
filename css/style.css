@@ -93,6 +93,9 @@ body {
   .video-toggle {
     display: none !important;
   }
+  .snow-toggle {
+    display: block !important;
+  }
   /* Hide screen share button on mobile to prevent UI clutter */
   .screen-btn,
   #screen-btn {
