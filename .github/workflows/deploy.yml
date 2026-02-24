@@ -1,7 +1,11 @@
-name: Deploy to GitHub Pages (with Branch Logic)(minified)
+name: Deploy to GitHub Pages
 on:
   push:
-    branches: [main, dev_b] # Triggers on both live and testing branches
+    branches: [ main, dev_b ]
+  workflow_dispatch: # Allows manual trigger from the Actions tab
+
+permissions:
+  contents: write # Essential to allow the action to push to gh-pages
 
 jobs:
   build-and-deploy:
@@ -13,46 +17,41 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18"
+          node-version: '18'
 
       - name: Install Minifier
         run: npm install -g terser
 
-      - name: Build Assets
+      - name: Build and Bundle
         run: |
           mkdir -p dist/js
-
-          # Check if the JS files exist before trying to merge them
-          if [ -f js/main.js ] && [ -f js/utils.js ]; then
-            echo "New version detected: Bundling files..."
-            cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js > dist/combined.js
-            terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
-            
-            # Update HTML only if we bundled
-            sed -i '/<script src="js\/main.js"><\/script>/i <script src="js/bundle.min.js"></script>' index.html
-            sed -i '/js\/.*\.js/d' index.html
-          else
-            echo "Old version detected: Copying files as-is..."
-            cp -r js dist/ || true
-          fi
-
-          # Copy everything else
           cp index.html dist/index.html
           cp -r css dist/css || true
           cp -r src dist/src || true
 
-      - name: Update HTML to use Bundle
-        run: |
-          sed -i '/<script src="js\/main.js"><\/script>/i <script src="js/bundle.min.js"></script>' dist/index.html
-          sed -i '/js\/.*\.js/d' dist/index.html
+          # Logic to handle different branch structures
+          if [ "${{ github.ref_name }}" == "dev_b" ]; then
+            echo "Processing dev_b: Bundling 5 files..."
+            cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js > dist/combined.js
+            terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
+            
+            # Replace multiple scripts with one bundle
+            sed -i '/<script src="js\/main.js"><\/script>/i <script src="js/bundle.min.js"></script>' dist/index.html
+            sed -i '/js\/.*\.js/d' dist/index.html
+          else
+            echo "Processing main: Minifying single main.js..."
+            terser js/main.js -o dist/js/bundle.min.js --compress --mangle
+            
+            # Update main's HTML to point to the new minified bundle
+            sed -i 's/js\/main.js/js\/bundle.min.js/g' dist/index.html
+          fi
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: dist
           branch: gh-pages
-          # Logic: If branch is main, deploy to root. If dev_b, deploy to 'dev' folder.
-          target-folder: ${{ github.ref == 'refs/heads/main' && '/' || 'dev' }}
-          # Logic: Only delete old files if we are updating the root (main).
-          # This prevents the 'dev' deployment from wiping the 'main' site.
-          clean: ${{ github.ref == 'refs/heads/main' }}
+          target-folder: ${{ github.ref_name == 'main' && '/' || 'dev' }}
+          clean: true
+          clean-exclude: |
+            ${{ github.ref_name == 'main' && 'dev' || 'js, css, index.html, src' }}
