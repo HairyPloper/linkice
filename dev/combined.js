@@ -950,7 +950,7 @@ if (chatContainer && dragHandle) {
 }
 
 window.askAI = async (prompt) => {
-  const API_KEY = "AIzaSyBan19EJ9nIdXDGhv-LhcOlGuhQWmcH_zo";
+  const API_KEY = "AIzaSyDLsI185Jj5zQUjq53H-rvb8zAgKgQD-ZE";
   const URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
   // 1. Prikaži lokalnu poruku korisniku da AI razmišlja
