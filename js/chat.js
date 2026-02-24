@@ -588,10 +588,9 @@ if (chatContainer && dragHandle) {
 }
 
 window.askAI = async (prompt) => {
-  const part1 = "AIzaSyC5eou8WcfaIfA8LiFEi2Cbr";
-  const part2 = "_tVviwLcw4";
-  const AY = part1 + part2;
   const models = ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemma-3-4b-it"];
+  // const aiConstraint =
+  //   "Respond in the same language as the user. Be concise, direct, and brief. No fluff. ";
 
   window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-ai", {
     username: "🤖",
@@ -599,15 +598,17 @@ window.askAI = async (prompt) => {
 
   for (let modelName of models) {
     try {
-      const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${AY}`;
-
-      const response = await fetch(URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
-      });
+      const response = await fetch(
+        "https://my-proxy-vercel-kappa.vercel.app/api/gemini",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: prompt,
+            model: modelName,
+          }),
+        },
+      );
 
       const data = await response.json();
 
