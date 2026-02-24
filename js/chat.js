@@ -73,38 +73,49 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
     formatMediaLinks(url),
   );
 
-  // Emoji provera
-  const onlyEmojiRegex =
-    /^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff]|\s)+$/;
-  const emojiClass = onlyEmojiRegex.test(text) ? "large-emoji" : "";
-
-  msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${escapeHtml(name)}: </b><span class="${emojiClass}">${formattedText}</span>`;
+  msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${escapeHtml(name)}: </b><span>${formattedText}</span>`;
 }
 
 function formatMediaLinks(url) {
-  if (/\.(jpeg|jpg|gif|png|webp)$/i.test(url)) {
-    return `<a href="${url}" target="_blank" style="color: #4ade80;">${url}</a>
-                <img src="${url}" style="max-width: 100%; border-radius: 8px; margin-top: 5px; display: block;" />`;
-  }
-  if (/\.(mp4|webm|ogg)$/i.test(url)) {
-    return `<video controls style="max-width: 100%; border-radius: 8px; margin-top: 5px; display: block;">
-                    <source src="${url}" type="video/mp4">
-                </video>`;
-  }
-  if (/\.(mp3|wav)$/i.test(url)) {
-    return `<audio controls style="width: 100%; margin-top: 5px; display: block;"><source src="${url}"></audio>`;
-  }
+  const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(url);
+  const isVideo = /\.(mp4|webm|ogg)$/i.test(url);
+  const isAudio = /\.(mp3|wav)$/i.test(url);
+  const isDoc = /\.(zip|rar|7z|pdf|doc|docx|txt)$/i.test(url);
   const ytMatch = url.match(
     /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
   );
-  if (ytMatch) {
-    return `<div style="position: relative; padding-bottom: 56.25%; height: 0; margin-top: 5px;">
-                    <iframe src="https://www.youtube.com/embed/${ytMatch[1]}" style="position: absolute; width: 100%; height: 100%; border:0; border-radius: 8px;" allowfullscreen></iframe>
-                </div>`;
-  }
   const spotifyMatch = url.match(
     /open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/,
   );
+
+  if (isImage) {
+    return `<a href="${url}" target="_blank" style="color: #4ade80;">${url}</a>
+                <img src="${url}" style="max-width: 100%; border-radius: 8px; margin-top: 5px; display: block;" />`;
+  }
+  if (isVideo) {
+      return `<a href="${url}" target="_blank" style="color: #4ade80;">Video: ${url}</a>
+            <video controls style="max-width: 70%;max-height: 100%; border-radius: 8px; margin-top: 5px; display: block;">
+                <source src="${url}" type="video/mp4">
+            </video>`;
+    }
+  if (isAudio) {
+    return `<a href="${url}" target="_blank" style="color: #4ade80;">Audio: ${url}</a>
+            <audio controls style="width: 100%; margin-top: 5px; display: block;">
+                <source src="${url}">
+            </audio>`;
+  }
+  if (isDoc) {
+    return `<div style="margin-top: 5px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; border: 1px dashed #4ade80;">
+                  <span style="font-size: 1.2em;">📁</span> 
+                  <a href="${url}" target="_blank" style="color: #4ade80; font-weight: bold;">Preuzmi fajl (${url.split("/").pop()})</a>
+                </div>`;
+  }
+  if (ytMatch) {
+    return `<a href="${url}" target="_blank" style="color: #4ade80;">${url}</a>
+              <div style="position: relative; padding-bottom: 56.25%; height: 0; margin-top: 5px;">
+                  <iframe src="https://www.youtube.com/embed/${ytMatch[1]}" style="position: absolute; width: 100%; height: 100%; border:0; border-radius: 8px;" allowfullscreen></iframe>
+              </div>`;
+  }
   if (spotifyMatch) {
     const type = spotifyMatch[1];
     const id = spotifyMatch[2];
@@ -533,56 +544,59 @@ if (chatContainer && dragHandle) {
 }
 
 window.askAI = async (prompt) => {
-    const API_KEY = "AIzaSyBhO_-rJIcEmqt5ZeEhiYETTXDcOqszi8A";
-    const models = [
-        "gemini-2.5-flash",
-        "gemini-2.0-flash-lite",
-        "gemma-3-4b-it" 
-    ];
+  const API_KEY = "AIzaSyBhO_-rJIcEmqt5ZeEhiYETTXDcOqszi8A";
+  const models = ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemma-3-4b-it"];
 
-    window.appendMessage("🤖 AI", "Razmišljam...", "#fbbf24", "temp-ai", { username: "🤖 AI" });
+  window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-ai", {
+    username: "🤖",
+  });
 
-    for (let modelName of models) {
-        try {
-            const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
-            
-            const response = await fetch(URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }]
-                })
-            });
+  for (let modelName of models) {
+    try {
+      const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
 
-            const data = await response.json();
+      const response = await fetch(URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      });
 
-            if (response.status === 429 || response.status === 404) {
-                console.warn(`Model ${modelName} nije uspeo, pokušavam sledeći...`);
-                continue; 
-            }
+      const data = await response.json();
 
-            if (data.candidates && data.candidates[0].content.parts[0].text) {
-                const aiText = data.candidates[0].content.parts[0].text;
-                
-                chatRef.push({
-                    username: `🤖 AI (${modelName})`,
-                    text: aiText,
-                    color: "#fbbf24",
-                    timestamp: Date.now()
-                });
-                return; 
-            }
-        } catch (err) {
-            console.error("Greška sa modelom " + modelName, err);
-        }
+      if (response.status === 429 || response.status === 404) {
+        console.warn(`Model ${modelName} nije uspeo, pokušavam sledeći...`);
+        continue;
+      }
+
+      if (data.candidates && data.candidates[0].content.parts[0].text) {
+        const aiText = data.candidates[0].content.parts[0].text;
+
+        chatRef.push({
+          username: `🤖 AI (${modelName})`,
+          text: aiText,
+          color: "#fbbf24",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+    } catch (err) {
+      console.error("Greška sa modelom " + modelName, err);
     }
-    window.appendMessage("Sistem", "Svi AI modeli su trenutno zauzeti. Pokušaj kasnije.", "#ef4444");
+  }
+
+  window.appendMessage(
+    "Sistem",
+    "Svi AI modeli su trenutno zauzeti. Pokušajte kasnije.",
+    "#ef4444",
+  );
 };
 
 window.appendSystemHTML = (htmlContent) => {
   const msgDiv = document.createElement("div");
   msgDiv.className = "chat-msg system-msg";
-  msgDiv.style.alignSelf = "center"; // Centriraj sistemske poruke
+  msgDiv.style.alignSelf = "center";
   msgDiv.style.width = "90%";
 
   msgDiv.innerHTML = `<b style="color: #60a5fa">Sistem:</b><br>${htmlContent}`;
@@ -590,3 +604,4 @@ window.appendSystemHTML = (htmlContent) => {
   chatMessages.appendChild(msgDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 };
+
