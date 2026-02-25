@@ -691,10 +691,6 @@ function handleCommand(text) {
           "#ef4444",
         );
       } else {
-      //   chatRef.push({
-      //   username: "Sistem",
-      //   text: `${window.myUsername} pita: ${prompt}`
-      // });
         window.askAI(prompt);
       }
       return true;
