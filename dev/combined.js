@@ -151,7 +151,7 @@ if (snowToggle) {
     window.isSnowing = !window.isSnowing;
 
     if (window.isSnowing) {
-      window.restartSnow();
+      window.restartSnow(); 
     }
     
     snowToggle.style.opacity = window.isSnowing ? "1" : "0.5";
@@ -162,14 +162,18 @@ if (snowToggle) {
 window.drawUser = (uid, username, icon, isMe = false) => {
   if (document.getElementById(`user-${uid}`)) return;
 
-  const displayIcon = isMe ? icon : window.animals[Math.floor(Math.random() * window.animals.length)];
+  const displayIcon = isMe
+    ? icon
+    : window.animals[Math.floor(Math.random() * window.animals.length)];
   const grid = document.getElementById("user-grid");
   if (!grid) return;
 
   const card = document.createElement("div");
   card.id = `user-${uid}`;
   card.className = "user-card";
-  card.onclick = isMe ? () => window.toggleMute() : () => card.classList.toggle("active");
+  card.onclick = isMe
+    ? () => window.toggleMute()
+    : () => card.classList.toggle("active");
 
   // Avatar container
   const avatarContainer = document.createElement("div");
@@ -196,7 +200,9 @@ window.drawUser = (uid, username, icon, isMe = false) => {
     const input = document.createElement("input");
     input.type = "range";
     input.className = "volume-slider";
-    input.min = 0; input.max = 100; input.value = 100;
+    input.min = 0;
+    input.max = 100;
+    input.value = 100;
     input.addEventListener("input", function () {
       window.adjustVolume(uid, this.value);
     });
@@ -212,7 +218,9 @@ window.playVideoInCard = (uid, track) => {
   const container = document.querySelector(`#user-${uid} .avatar-container`);
   if (!container) return;
   container.querySelector(".avatar").style.display = "none";
-  let videoDiv = document.getElementById(`video-wrapper-${uid}`) || document.createElement("div");
+  let videoDiv =
+    document.getElementById(`video-wrapper-${uid}`) ||
+    document.createElement("div");
   videoDiv.id = `video-wrapper-${uid}`;
   videoDiv.className = "video-container";
   videoDiv.onclick = (e) => {
@@ -234,14 +242,20 @@ window.removeVideoFromCard = (uid) => {
 (function () {
   const canvas = document.createElement("canvas");
   Object.assign(canvas.style, {
-    position: "fixed", top: "0", left: "0", width: "100vw", height: "100vh", pointerEvents: "none", zIndex: "-1",
+    position: "fixed",
+    top: "0",
+    left: "0",
+    width: "100vw",
+    height: "100vh",
+    pointerEvents: "none",
+    zIndex: "-1",
   });
   document.body.appendChild(canvas);
   const ctx = canvas.getContext("2d");
-  
+
   let particles = [];
   window.isSnowing = true; // Control variable
-  
+
   const isPako = window.myUsername?.startsWith("Pako");
 
   // Helper to create a single particle
@@ -257,8 +271,10 @@ window.removeVideoFromCard = (uid) => {
 
   // Global function to refill particles when toggled ON
   window.restartSnow = () => {
-    if (particles.length === 0) {
-      for (let i = 0; i < 100; i++) {
+    const targetCount = 100;
+    if (particles.length < targetCount) {
+      const toAdd = targetCount - particles.length;
+      for (let i = 0; i < toAdd; i++) {
         particles.push(createParticle(Math.random() * -canvas.height));
       }
     }
@@ -267,7 +283,9 @@ window.removeVideoFromCard = (uid) => {
   function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    particles = Array.from({ length: 100 }, () => createParticle(Math.random() * canvas.height));
+    particles = Array.from({ length: 100 }, () =>
+      createParticle(Math.random() * canvas.height),
+    );
   }
 
   window.addEventListener("resize", resize);
@@ -275,14 +293,14 @@ window.removeVideoFromCard = (uid) => {
 
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
+
     // Iterate backwards so we can safely splice/remove items
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       ctx.fillStyle = isPako ? "red" : "white";
       ctx.font = `${p.size * 2}px serif`;
       ctx.fillText(p.symbol, p.x, p.y);
-      
+
       p.y += p.speed;
 
       if (p.y > canvas.height) {
@@ -299,7 +317,8 @@ window.removeVideoFromCard = (uid) => {
     requestAnimationFrame(draw);
   }
   draw();
-})();/**
+})();
+/**
  * js/rtc.js - Agora WebRTC, Audio/Video prenos
  */
 
