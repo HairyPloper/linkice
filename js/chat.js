@@ -258,7 +258,7 @@ function handleCommand(text) {
         text: `🎲 **${window.myUsername}** rola: **${Math.floor(Math.random() * max) + 1}** (1-${max})`,
       });
       return true;
-    case "/Bot":
+    case "/bot":
       const prompt = args.slice(1).join(" ");
       if (!prompt) {
         window.appendMessage(
@@ -347,7 +347,7 @@ function handleCommand(text) {
                 <code style="color: #fbbf24;text-align: left;">/clear</code> <span>Očisti čet</span>
                 <code style="color: #fbbf24;text-align: left;">/ping</code> <span>Ping test Agora</span>
                 <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
-                <code style="color: #fbbf24;text-align: left;">/Bot {pitanje}</code> <span>Postavi pitanje Bot-ju</span>
+                <code style="color: #fbbf24;text-align: left;">/bot {pitanje}</code> <span>Postavi pitanje Bot-ju</span>
               </div>
             </div>`;
       window.appendSystemHTML(helpHtml);
@@ -608,7 +608,7 @@ window.askAI = async (prompt) => {
   // const aiConstraint =
   //   "Respond in the same language as the user. Be concise, direct, and brief. No fluff. ";
 
-  window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-Bot", {
+  window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-bot", {
     username: "🤖",
   });
 
