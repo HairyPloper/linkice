@@ -105,6 +105,17 @@ body {
   #chat-header {
     display: none !important;
   }
+  /* Fullscreen chat between header and controls */
+  #chat-container {
+    position: fixed !important;
+    top: 120px !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: auto !important;
+    width: auto !important;
+    height: calc(100dvh - 240px) !important; /* Use dynamic viewport height for better mobile compatibility */
+    z-index: 999 !important;
+  }
   body {
     /* Deep rich gradient for mobile */
     background: radial-gradient(
@@ -112,6 +123,10 @@ body {
       #2e1065,
       #020617 80%
     ) !important;
+    padding-bottom: env(safe-area-inset-bottom, 20px) !important; /* Add padding for mobile navigation bars */
+  }
+  .controls {
+    margin-bottom: 20px !important; /* Reduce margin since body has padding */
   }
 }
 
