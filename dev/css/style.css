@@ -287,7 +287,7 @@ h2 {
   display: flex;
   justify-content: center;
   background: rgba(0, 0, 0, 0.3); /* Transparent pill */
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(15px);
   border-radius: 60px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
@@ -470,7 +470,7 @@ h2 {
   width: 480px;
   height: 650px;
   background: var(--glass-bg);
-  backdrop-filter: blur(15px);
+  backdrop-filter: blur(3px);
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   display: flex;
