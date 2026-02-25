@@ -487,12 +487,11 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
 
   let formattedText;
   if (name.includes("🤖 AI")) {
-    // Special formatting for AI messages: Question and Answer on separate lines with different colors
     const parts = safeText.split('\n');
     if (parts.length >= 2) {
       const questionPart = parts[0];
       const answerPart = parts.slice(1).join('\n'); // In case there are more lines
-      formattedText = `<div style="color: #ffcc00; margin-bottom: 5px;">${questionPart}</div><div style="color: #fbbf24;">${answerPart}</div>`;
+      formattedText = `<div style="color: #fbbf24; margin-bottom: 5px;">${questionPart}</div><div style="color: #ffffff;">${answerPart}</div>`;
     } else {
       formattedText = safeText.replace(urlRegex, (url) => formatMediaLinks(url));
     }
