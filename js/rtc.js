@@ -120,6 +120,10 @@ if (joinBtn) joinBtn.onclick = async () => {
     if (screenBtn) screenBtn.style.display = "flex";
     const s = document.getElementById("status");
     if (s) { s.innerText = "Povezan • Live"; s.style.color = "#4ade80"; }
+
+    if (window.innerWidth < 768) {
+       window.chatContainer.classList.add('collapsed');
+    }
   } catch (e) {
     console.error(e); btn.disabled = false;
   }

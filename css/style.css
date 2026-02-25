@@ -101,10 +101,6 @@ body {
   #screen-btn {
     display: none !important;
   }
-  /* Hide chat header (drag handle) on mobile for fullscreen chat */
-  #chat-header {
-    display: none !important;
-  }
   /* Fullscreen chat between header and controls */
   #chat-container {
     position: fixed !important;
@@ -116,6 +112,14 @@ body {
     height: calc(100dvh - 240px) !important; /* Use dynamic viewport height for better mobile compatibility */
     z-index: 999 !important;
   }
+  /* Collapsed state for mobile chat */
+  #chat-container.collapsed #chat-messages,
+  #chat-container.collapsed .chat-input-wrapper {
+    display: none !important;
+  }
+  #chat-container.collapsed {
+    height: 50px !important;
+  }
   body {
     /* Deep rich gradient for mobile */
     background: radial-gradient(
@@ -126,7 +130,12 @@ body {
     padding-bottom: env(safe-area-inset-bottom, 20px) !important; /* Add padding for mobile navigation bars */
   }
   .controls {
-    margin-bottom: 20px !important; /* Reduce margin since body has padding */
+    position: fixed !important;
+    bottom: env(safe-area-inset-bottom, 10px) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    margin-bottom: 0 !important;
+    z-index: 1000 !important;
   }
 }
 
@@ -836,3 +845,14 @@ h2 {
   word-break: break-all;
 }
 .media-link-plain:hover { color: #a5b4fc; text-decoration: underline; }
+
+/* Collapsed state for desktop chat */
+@media (min-width: 768px) {
+  #chat-container.collapsed #chat-messages,
+  #chat-container.collapsed .chat-input-wrapper {
+    display: none !important;
+  }
+  #chat-container.collapsed {
+    height: auto !important;
+  }
+}
