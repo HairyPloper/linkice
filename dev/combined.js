@@ -1055,7 +1055,7 @@ window.askAI = async (prompt) => {
 
         chatRef.push({
           username: `🤖 Bot (${modelName})`,
-          text: `${window.username} pita: ${prompt}\nOdgovor: ${aiText}`,
+          text: `${window.myUsername} pita: ${prompt}\nOdgovor: ${aiText}`,
           color: "#fbbf24",
           timestamp: Date.now(),
         });

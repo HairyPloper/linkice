@@ -101,6 +101,10 @@ body {
   #screen-btn {
     display: none !important;
   }
+  /* Hide chat header (drag handle) on mobile for fullscreen chat */
+  #chat-header {
+    display: none !important;
+  }
   body {
     /* Deep rich gradient for mobile */
     background: radial-gradient(
