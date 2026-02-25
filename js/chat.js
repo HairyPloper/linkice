@@ -68,10 +68,23 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const safeText = escapeHtml(text);
 
-  // Zamena linkova medijima
-  const formattedText = safeText.replace(urlRegex, (url) =>
-    formatMediaLinks(url),
-  );
+  let formattedText;
+  if (name.includes("🤖 AI")) {
+    // Special formatting for AI messages: Question and Answer on separate lines with different colors
+    const parts = safeText.split('\n');
+    if (parts.length >= 2) {
+      const questionPart = parts[0];
+      const answerPart = parts.slice(1).join('\n'); // In case there are more lines
+      formattedText = `<div style="color: #ffcc00; margin-bottom: 5px;">${questionPart}</div><div style="color: #fbbf24;">${answerPart}</div>`;
+    } else {
+      formattedText = safeText.replace(urlRegex, (url) => formatMediaLinks(url));
+    }
+  } else {
+    // Zamena linkova medijima
+    formattedText = safeText.replace(urlRegex, (url) =>
+      formatMediaLinks(url),
+    );
+  }
 
   msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${escapeHtml(name)}: </b><span>${formattedText}</span>`;
 }
