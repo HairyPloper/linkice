@@ -69,7 +69,7 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
   const safeText = escapeHtml(text);
 
   let formattedText;
-  if (name.includes("🤖 AI")) {
+  if (name.includes("🤖 Bot")) {
     const parts = safeText.split('\n');
     if (parts.length >= 2) {
       const questionPart = parts[0];
@@ -258,12 +258,12 @@ function handleCommand(text) {
         text: `🎲 **${window.myUsername}** rola: **${Math.floor(Math.random() * max) + 1}** (1-${max})`,
       });
       return true;
-    case "/ai":
+    case "/Bot":
       const prompt = args.slice(1).join(" ");
       if (!prompt) {
         window.appendMessage(
           "Sistem",
-          "Format: /ai Koliko je 2+2?",
+          "Format: /Bot Koliko je 2+2?",
           "#ef4444",
         );
       } else {
@@ -347,7 +347,7 @@ function handleCommand(text) {
                 <code style="color: #fbbf24;text-align: left;">/clear</code> <span>Očisti čet</span>
                 <code style="color: #fbbf24;text-align: left;">/ping</code> <span>Ping test Agora</span>
                 <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
-                <code style="color: #fbbf24;text-align: left;">/ai {pitanje}</code> <span>Postavi pitanje AI-ju</span>
+                <code style="color: #fbbf24;text-align: left;">/Bot {pitanje}</code> <span>Postavi pitanje Bot-ju</span>
               </div>
             </div>`;
       window.appendSystemHTML(helpHtml);
@@ -608,7 +608,7 @@ window.askAI = async (prompt) => {
   // const aiConstraint =
   //   "Respond in the same language as the user. Be concise, direct, and brief. No fluff. ";
 
-  window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-ai", {
+  window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-Bot", {
     username: "🤖",
   });
 
@@ -637,7 +637,7 @@ window.askAI = async (prompt) => {
         const aiText = data.candidates[0].content.parts[0].text;
 
         chatRef.push({
-          username: `🤖 AI (${modelName})`,
+          username: `🤖 Bot (${modelName})`,
           text: `Pitanje: ${prompt}\nOdgovor: ${aiText}`,
           color: "#fbbf24",
           timestamp: Date.now(),
@@ -651,7 +651,7 @@ window.askAI = async (prompt) => {
 
   window.appendMessage(
     "Sistem",
-    "Svi AI modeli su trenutno zauzeti. Pokušajte kasnije.",
+    "Svi Bot modeli su trenutno zauzeti. Pokušajte kasnije.",
     "#ef4444",
   );
 };
