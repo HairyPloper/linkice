@@ -148,8 +148,13 @@ if (audioBtn && audio) {
 
 if (snowToggle) {
   snowToggle.onclick = () => {
-    const canvas = document.querySelector("canvas");
-    if (canvas) canvas.style.display = canvas.style.display === "none" ? "block" : "none";
+    window.isSnowing = !window.isSnowing;
+
+    if (window.isSnowing) {
+      window.restartSnow();
+    }
+    
+    snowToggle.style.opacity = window.isSnowing ? "1" : "0.5";
   };
 }
 
@@ -233,33 +238,64 @@ window.removeVideoFromCard = (uid) => {
   });
   document.body.appendChild(canvas);
   const ctx = canvas.getContext("2d");
-  let particles = [];
-  const isPako = window.myUsername.startsWith("Pako");
   
-  function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    particles = Array.from({ length: 100 }, () => ({
+  let particles = [];
+  window.isSnowing = true; // Control variable
+  
+  const isPako = window.myUsername?.startsWith("Pako");
+
+  // Helper to create a single particle
+  function createParticle(yPos) {
+    return {
       x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
+      y: yPos,
       speed: 0.5 + Math.random(),
       size: isPako ? 15 : 3,
       symbol: isPako ? "❤" : "❄",
-    }));
+    };
   }
-  
+
+  // Global function to refill particles when toggled ON
+  window.restartSnow = () => {
+    if (particles.length === 0) {
+      for (let i = 0; i < 100; i++) {
+        particles.push(createParticle(Math.random() * -canvas.height));
+      }
+    }
+  };
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    particles = Array.from({ length: 100 }, () => createParticle(Math.random() * canvas.height));
+  }
+
   window.addEventListener("resize", resize);
   resize();
-  
+
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    particles.forEach((p) => {
+    
+    // Iterate backwards so we can safely splice/remove items
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
       ctx.fillStyle = isPako ? "red" : "white";
       ctx.font = `${p.size * 2}px serif`;
       ctx.fillText(p.symbol, p.x, p.y);
+      
       p.y += p.speed;
-      if (p.y > canvas.height) p.y = -20;
-    });
+
+      if (p.y > canvas.height) {
+        if (window.isSnowing) {
+          // Keep looping if snow is enabled
+          p.y = -20;
+          p.x = Math.random() * canvas.width;
+        } else {
+          // Remove from array if snow is disabled (they "fall out" of the world)
+          particles.splice(i, 1);
+        }
+      }
+    }
     requestAnimationFrame(draw);
   }
   draw();
