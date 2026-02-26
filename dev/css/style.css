@@ -335,6 +335,7 @@ h2 {
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #fca5a5;
   display: none;
+  margin-left: 10px;
 }
 .leave-btn:hover {
   background: rgba(239, 68, 68, 0.2);

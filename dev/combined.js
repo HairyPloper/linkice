@@ -839,7 +839,7 @@ function handleCommand(text) {
                 <code style="color: #fbbf24;text-align: left;">/clear</code> <span>Očisti čet</span>
                 <code style="color: #fbbf24;text-align: left;">/ping</code> <span>Ping test Agora</span>
                 <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
-                <code style="color: #fbbf24;text-align: left;">/bot {pitanje}</code> <span>Postavi pitanje Bot-ju</span>
+                <code style="color: #fbbf24;text-align: left;">/bot {pitanje}</code> <span>Postavi pitanje botu</span>
               </div>
             </div>`;
       window.appendSystemHTML(helpHtml);
