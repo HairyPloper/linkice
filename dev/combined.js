@@ -489,6 +489,8 @@ const chatContainer = document.getElementById("chat-container");
 const dragHandle = document.getElementById("chat-drag-handle");
 const uploadBtn = document.getElementById("upload-btn");
 const fileInput = document.getElementById("file-input");
+const settingsBtn = document.getElementById("settings-btn");
+const settingsMenu = document.getElementById("settings-menu");
 
 // Make chatContainer global for other scripts
 window.chatContainer = chatContainer;
@@ -916,29 +918,25 @@ window.vote = (pollId, option) => {
 };
 
 // --- OSTALO (Upload, Emoji, Autocomplete) ---
-async function uploadFile(file) {
+async function uploadFile(file, expiry) {
   const formData = new FormData();
   formData.append("reqtype", "fileupload");
   formData.append("fileToUpload", file);
 
-  try {
-    const response = await fetch("https://catbox.moe/user/api.php", {
-      method: "POST",
-      body: formData,
-    });
+  let apiUrl = "https://catbox.moe/user/api.php";
 
-    const fileUrl = await response.text();
-    return fileUrl ? fileUrl.trim() : null;
+  if (expiry !== "trajno") {
+    formData.append("time", expiry);
+    apiUrl = "https://litterbox.catbox.moe/resources/internals/api.php";
+  }
+
+  try {
+    const response = await fetch(apiUrl, { method: "POST", body: formData });
+    return (await response.text()).trim();
   } catch (e) {
     console.error("Direktan upload nije uspeo, pokušavam preko proxy-ja...", e);
     try {
-      const proxyRes = await fetch(
-        "https://corsproxy.io/?https://catbox.moe/user/api.php",
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
+      const proxyRes = await fetch("https://corsproxy.io/?" + apiUrl, { method: "POST", body: formData });
       return (await proxyRes.text()).trim();
     } catch (err) {
       return null;
@@ -949,12 +947,14 @@ async function handleFileUpload(file) {
   if (window.appendMessage)
     window.appendMessage("Sistem", `Slanje fajla: ${file.name}...`, "#60a5fa");
 
-  const fileUrl = await uploadFile(file);
+  const expirySelect = document.getElementById("upload-expiry");
+  const expiry = expirySelect ? expirySelect.value : "trajno";
+  const fileUrl = await uploadFile(file, expiry);
 
   if (fileUrl && fileUrl.startsWith("http")) {
     chatRef.push({
       username: window.myUsername,
-      text: fileUrl,
+      text: `Dostupno ${expiry}: ${fileUrl}`,
       color: window.myColor || "#ffffff",
       timestamp: Date.now(),
     });
@@ -1182,3 +1182,20 @@ window.appendSystemHTML = (htmlContent) => {
   chatMessages.appendChild(msgDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 };
+
+// --- SETTINGS MENU ---
+settingsBtn.onclick = (e) => {
+  e.stopPropagation();
+  settingsMenu.classList.toggle("hidden");
+};
+
+// Close menu when clicking outside
+document.addEventListener("click", (e) => {
+  if (
+    settingsMenu &&
+    !settingsMenu.contains(e.target) &&
+    e.target !== settingsBtn
+  ) {
+    settingsMenu.classList.add("hidden");
+  }
+});

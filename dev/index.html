@@ -94,6 +94,19 @@
         >
           ❄️
         </button>
+        <div class="header-actions">
+          <button id="settings-btn" title="Postavke">⚙️</button>
+          <div id="settings-menu" class="hidden">
+            <h4>Postavke</h4>
+            <label for="upload-expiry">Čuvaj fajl:</label>
+            <select id="upload-expiry">
+              <option value="trajno">Trajno (Catbox)</option>
+              <option value="1h">1 Sat (Litterbox)</option>
+              <option value="24h" selected>24 Sata (Litterbox)</option>
+              <option value="72h">72 Sata (Litterbox)</option>
+            </select>
+          </div>
+        </div>
         <div
           id="chat-drag-handle"
           style="cursor: grab; padding: 5px; color: #4ade80; display: flex"
