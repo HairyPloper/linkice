@@ -43,9 +43,7 @@
           color: #cbd5e1;
           font-weight: 300;
         "
-      >
-        
-      </div>
+      ></div>
     </div>
 
     <div id="user-grid"></div>
@@ -73,26 +71,26 @@
           border-radius: 12px 12px 0 0;
         "
       >
-          <button
-      id="audioToggle"
-      class="video-toggle"
-      title="Muzika"
-      style="bottom: 60px"
-    >
-      🎵
-    </button>
-    <button
-      id="videoToggle"
-      class="video-toggle"
-      title="Uključi/Isključi video"
-    >
-      🎬
-    </button>
+        <button
+          id="audioToggle"
+          class="video-toggle"
+          title="Muzika"
+          style="bottom: 60px"
+        >
+          🎵
+        </button>
+        <button
+          id="videoToggle"
+          class="video-toggle"
+          title="Uključi/Isključi video"
+        >
+          🎬
+        </button>
         <button
           id="snowToggle"
           class="video-toggle snow-toggle"
           title="Uključi/Isključi pahuljicu"
-          style="top:8px; right: 50px; "
+          style="top: 8px; right: 50px"
         >
           ❄️
         </button>
@@ -123,6 +121,21 @@
       <div id="autocomplete-menu" style="display: none"></div>
 
       <div class="chat-input-wrapper">
+        <button
+          id="upload-btn"
+          type="button"
+          style="
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 5px;
+          "
+        >
+          ➕
+        </button>
+
+        <input type="file" id="file-input" style="display: none" multiple />
         <input
           type="text"
           id="chat-input"

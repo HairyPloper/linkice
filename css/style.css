@@ -480,6 +480,8 @@ h2 {
   z-index: 999;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+  animation: slideDown 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* transition: all 2s cubic-bezier(0.4, 0, 0.2, 1); */
 }
 
 #chat-header {
@@ -494,6 +496,7 @@ h2 {
   flex-direction: column;
   gap: 8px;
   font-size: 0.85rem;
+  animation: slideDown 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /* System messages like "Petar has joined" */
@@ -881,4 +884,52 @@ h2 {
   #chat-container.collapsed {
     height: auto !important;
   }
+}
+/* --- LOADING SKELETON --- */
+.chat-loading-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 15px;
+  width: 100%;
+}
+
+.skeleton-bubble {
+  height: 40px;
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.03) 25%, 
+    rgba(255, 255, 255, 0.08) 50%, 
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+}
+
+.skeleton-bubble.short { width: 40%; }
+.skeleton-bubble.med { width: 70%; }
+.skeleton-bubble.long { width: 85%; }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+/* --- UPLOAD BUTTON --- */
+#upload-btn {
+    transition: transform 0.2s ease, color 0.2s ease;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+#upload-btn:active {
+    transform: scale(0.9);
+    color: var(--primary);
+}
+
+/* Ensure the input wrapper has enough space on mobile */
+@media (max-width: 767px) {
+    .chat-input-wrapper {
+        gap: 10px;
+        padding: 12px;
+    }
 }
