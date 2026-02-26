@@ -478,6 +478,17 @@ window.adjustVolume = (uid, vol) => {
  * js/chat.js - Logika za poruke, komande i autocomplete
  */
 
+firebase.auth().onAuthStateChanged((user) => {
+  if (!user) {
+    firebase.auth().signInAnonymously()
+      .then(() => {
+        console.log("Logged in anonymously");
+      })
+      .catch((error) => {
+        console.error("Auth failed:", error.message);
+      });
+  }
+});
 const chatRef = firebase.database().ref(`messages/${window.CHANNEL}`);
 const chatInput = document.getElementById("chat-input");
 const chatMessages = document.getElementById("chat-messages");
@@ -1114,6 +1125,7 @@ if (chatContainer && dragHandle) {
   dragHandle.onclick = () => {
     if (!isDragging) {
       chatContainer.classList.toggle("collapsed");
+      settingsBtn.classList.toggle("hidden");
     }
   };
 }
