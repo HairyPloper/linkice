@@ -2,15 +2,11 @@
  * js/chat.js - Logika za poruke, komande i autocomplete
  */
 
+// Silent login for security rules
 firebase.auth().onAuthStateChanged((user) => {
   if (!user) {
     firebase.auth().signInAnonymously()
-      .then(() => {
-        console.log("Logged in anonymously");
-      })
-      .catch((error) => {
-        console.error("Auth failed:", error.message);
-      });
+      .catch((error) => console.error("Auth Error:", error.message));
   }
 });
 const chatRef = firebase.database().ref(`messages/${window.CHANNEL}`);
