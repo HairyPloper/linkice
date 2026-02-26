@@ -172,10 +172,10 @@ h2 {
 .header::before {
   content: "";
   position: absolute;
-  top: 50%; 
-  left: 10%;
-  width: 80%;
-  height: 40px;
+  top: 80%; 
+  left: 32%;
+  width: 41%;
+  height: 20px;
   transform: translateY(-50%);
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 24' preserveAspectRatio='none'%3E%3Cpolyline points='0,12 35,12 38,8 41,18 45,2 49,20 53,10 56,12 100,12' fill='none' stroke='%23f0abfc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center;
   background-size: 100% 100%;
@@ -187,8 +187,8 @@ h2 {
 }
 
 @keyframes drawLifeLine {
-  0% { clip-path: inset(0 100% 0 0); }
-  100% { clip-path: inset(0 0 0 0); }
+  0% { clip-path: inset(0 100% 0 0 ); }
+  100% { clip-path: inset(0 11% 0 0); }
 }
 
 /* --- GRID --- */
@@ -480,7 +480,7 @@ h2 {
   z-index: 999;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
   overflow: hidden;
-  animation: slideDown 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: slideDown 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
   /* transition: all 2s cubic-bezier(0.4, 0, 0.2, 1); */
 }
 
@@ -496,7 +496,7 @@ h2 {
   flex-direction: column;
   gap: 8px;
   font-size: 0.85rem;
-  animation: slideDown 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: slideDown 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /* System messages like "Petar has joined" */
