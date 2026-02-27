@@ -141,6 +141,7 @@ window.client.on("user-published", async (user, mediaType) => {
  * Plays a low tone, posts a system message, and removes the user's card.
  */
 window.client.on("user-left", (user) => {
+  delete window.uidNameMap[user.uid];
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${window.getDisplayName(user.uid)}** je otišao.`, "#ffcc00");
@@ -230,7 +231,11 @@ if (joinBtn) joinBtn.onclick = async () => {
     firebase.database()
       .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
       .set({ displayName: window.myDisplayName, icon: window.myIcon });
-
+    // Auto-remove presence if connection drops unexpectedly
+    firebase.database()
+      .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
+      .onDisconnect().remove();
+      
     if (window.appendMessage)
       window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#ffcc00");
 
@@ -295,6 +300,9 @@ async function leaveChannel() {
 
   // --- 5. RESET LOCAL STATE ---
   isMuted = false;
+
+  // --- removes stale entries
+  window.uidNameMap = {};
 
   // --- 6. USER GRID ---
   const grid = document.getElementById("user-grid");

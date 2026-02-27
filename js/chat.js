@@ -354,11 +354,12 @@ function handleCommand(text) {
         localStorage.setItem("savedUsername", newNick);
 
         // Update presence so other users see the new name immediately
-        if (window.client?.uid) {
-          firebase.database()
-            .ref(`presence/${window.CHANNEL}/${window.client.uid}/displayName`)
-            .set(newNick);
-        }
+        //TODO: nobody is listening with on() so it does nothing
+        // if (window.client?.uid) {
+        //   firebase.database()
+        //     .ref(`presence/${window.CHANNEL}/${window.client.uid}/displayName`)
+        //     .set(newNick);
+        // }
 
         // Update own card in the grid
         const nameEl = document.querySelector(`#user-${window.client?.uid} .username`);
@@ -517,7 +518,7 @@ function startChat() {
 window.vote = (pollId, option) => {
   const votedKey = `voted_${pollId}`;
   if (localStorage.getItem(votedKey)) {
-    alert("Već glasao");
+    window.appendMessage("Sistem", "Već si glasao u ovoj anketi.", "#ef4444");
     return;
   }
 

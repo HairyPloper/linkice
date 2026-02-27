@@ -247,7 +247,12 @@ window.removeVideoFromCard = (uid) => {
   // ---- Draw loop ----
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+    
+    // Pause loop when nothing to draw — resume via restartSnow
+    if (particles.length === 0 && !window.isSnowing) {
+      setTimeout(() => requestAnimationFrame(draw), 1000);
+      return;
+    }
     // Iterate backwards so splicing doesn't skip items
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
