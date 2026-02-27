@@ -310,6 +310,7 @@ window.sendMessage = async () => {
   // If it's a slash command, handle it locally and skip Firebase push
   if (handleCommand(text)) {
     chatInput.value = "";
+    chatInput.focus();
     return;
   }
 
@@ -322,6 +323,7 @@ window.sendMessage = async () => {
       timestamp: Date.now(),
     });
     chatInput.value = "";
+    chatInput.focus();
   } catch (err) {
     console.error("Greška pri slanju:", err);
   }
