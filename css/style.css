@@ -31,17 +31,8 @@ body {
   height: 100dvh;
   min-height: -webkit-fill-available;
   overflow: hidden;
+  overscroll-behavior: none;
 }
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: radial-gradient(circle at center, #2e1065, #020617 80%);
-  z-index: -100;
-  pointer-events: none;
-}
-
 /* ============================================================
    BUTTONS
    ============================================================ */
@@ -175,8 +166,6 @@ body::before {
     transform: translateX(-50%) !important;
     margin-bottom: 0 !important;
     z-index: 1000 !important;
-    transform: translateZ(0); /* Forces GPU layer — prevents Firefox mobile repaint bug */
-    -webkit-transform: translateZ(0);
   }
 }
 
