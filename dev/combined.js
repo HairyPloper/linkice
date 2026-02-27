@@ -627,49 +627,73 @@ const joinBtn = document.getElementById("join-btn");
 
 if (joinBtn) joinBtn.onclick = async () => {
   const btn = joinBtn;
-  btn.disabled = true; // Prevent double-clicks during the async join flow
+  btn.disabled = true;
 
   try {
+    // --- 1. ACQUIRE MICROPHONE ---
+    let audioTrack;
+    try {
+      audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+    } catch (micErr) {
+      console.error("Mikrofon nije dostupan:", micErr);
+
+      const s = document.getElementById("status");
+      if (s) {
+        s.innerText = "⚠️ Mikrofon nije dostupan";
+        s.style.color = "#f87171";
+      }
+      if (window.appendMessage)
+        window.appendMessage("Sistem", "Greška: Mikrofon nije dostupan ili je odbijen.", "#ef4444");
+
+      btn.disabled = false; 
+      return; 
+    }
+
+    // --- 2. JOIN AGORA CHANNEL ---
     await window.client.join(window.APP_ID, window.CHANNEL, null, window.myAgoraUID);
     window.client.enableAudioVolumeIndicator();
 
-if (window.appendMessage)
-      window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#ffcc00");
+    // --- 3. PUBLISH AUDIO TRACK ---
+    localTracks.audioTrack = audioTrack;
+    await window.client.publish(localTracks.audioTrack);
 
-    // Write presence so users already in the room can resolve your name
+    // --- 4. UPDATE PRESENCE IN FIREBASE ---
     window.uidNameMap[window.client.uid] = window.myDisplayName;
     firebase.database()
       .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
       .set({ displayName: window.myDisplayName, icon: window.myIcon });
 
-    // Capture and publish the local microphone
-    localTracks.audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-    await window.client.publish(localTracks.audioTrack);
+    if (window.appendMessage)
+      window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#ffcc00");
 
-    // Render the local user's card (isLocal = true so it gets special styling)
+    // --- 5. UPDATE UI TO CONNECTED STATE ---
     window.drawUser(window.client.uid, window.myDisplayName, window.myIcon, true);
-
-    // Prevent screen sleep during a call (mobile-friendly)
     window.requestWakeLock();
 
-    // Switch control bar from "join" to "leave + screen share"
     btn.style.display = "none";
     const leaveBtn = document.getElementById("leave-btn");
     if (leaveBtn)  leaveBtn.style.display = "flex";
     if (screenBtn) screenBtn.style.display = "flex";
 
-    // Update the status indicator in the header
     const s = document.getElementById("status");
     if (s) { s.innerText = "Povezan • Live"; s.style.color = "#4ade80"; }
 
-    // On mobile, collapse the chat so the user grid is visible after joining
     if (window.innerWidth < 768) {
       window.chatContainer.classList.add("collapsed");
     }
 
   } catch (e) {
     console.error(e);
-    btn.disabled = false; // Re-enable so the user can try again
+    // Attempt to clean up Agora state if join/publish failed after partial success
+    try { await window.client.leave(); } catch (_) {}
+    firebase.database()
+      .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
+      .remove();
+
+    const s = document.getElementById("status");
+    if (s) { s.innerText = "Greška pri povezivanju"; s.style.color = "#f87171"; }
+
+    btn.disabled = false;
   }
 };
 

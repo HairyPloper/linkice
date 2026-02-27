@@ -11,13 +11,13 @@
   --success: #10b981;
   --danger: #ef4444;
 }
-
 /* ============================================================
    BASE BODY STYLES
    Full-viewport centered layout with dark radial background
    ============================================================ */
 body {
   font-family: "Outfit", sans-serif;
+  background-color: #020617;
   background: radial-gradient(
     circle at center,
     #2e1065,
