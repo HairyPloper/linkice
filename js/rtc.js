@@ -160,7 +160,6 @@ window.client.on("user-joined", (user) => {
  * Volume indicator — fires every 2 s with audio levels for all active speakers.
  * Adds/removes the .speaking class on avatars to drive the neon pulse animation.
  */
-window.client.enableAudioVolumeIndicator();
 window.client.on("volume-indicator", (volumes) => {
   // Clear all current speaking highlights before re-applying
   document.querySelectorAll(".avatar.speaking").forEach((el) =>
@@ -190,9 +189,10 @@ if (joinBtn) joinBtn.onclick = async () => {
     // Agora UIDs must be numeric or a sanitised string — strip special chars
     const cleanName = window.sanitizeForAgora(window.myUsername);
     await window.client.join(window.APP_ID, window.CHANNEL, null, cleanName);
+    window.client.enableAudioVolumeIndicator();
 
     if (window.appendMessage)
-      window.appendMessage("Sistem", `Povezan **${window.getDisplayName(cleanName)}**`, "#ffcc00");
+      window.appendMessage("Sistem", `Povezan **${cleanName}**`, "#ffcc00");
 
     // Capture and publish the local microphone
     localTracks.audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
@@ -226,26 +226,69 @@ if (joinBtn) joinBtn.onclick = async () => {
 };
 
 // ============================================================
-// LEAVE
-// Releases all resources and reloads the page to reset state cleanly
+// LEAVE CHANNEL
+// Cleans up all Agora resources and resets the UI to pre-join state.
+// Called by the leave button — no page reload needed.
 // ============================================================
-const leaveBtn = document.getElementById("leave-btn");
+async function leaveChannel() {
+  // --- 1. WAKE LOCK ---
+  if (window.wakeLock) {
+    await window.wakeLock.release();
+    window.wakeLock = null;
+  }
 
-if (leaveBtn) leaveBtn.onclick = async () => {
-  // Release the screen wake lock if it's active
-  if (window.wakeLock) await window.wakeLock.release();
+  // --- 2. SCREEN SHARE ---
+  if (screenTrack) await stopScreenShare();
 
-  // Stop and close the local microphone track
+  // --- 3. LOCAL AUDIO TRACK ---
   if (localTracks.audioTrack) {
     localTracks.audioTrack.stop();
     localTracks.audioTrack.close();
+    localTracks.audioTrack = null;
   }
 
+  // --- 4. AGORA CLIENT ---
   await window.client.leave();
 
-  // Reload to reset all UI and Agora state cleanly
-  location.reload();
-};
+  // --- 5. RESET LOCAL STATE ---
+  isMuted = false;
+
+  // --- 6. USER GRID ---
+  const grid = document.getElementById("user-grid");
+  if (grid) grid.innerHTML = "";
+
+  // --- 7. BUTTONS ---
+  const leaveBtn = document.getElementById("leave-btn");
+  const joinBtn  = document.getElementById("join-btn");
+  if (leaveBtn)  leaveBtn.style.display  = "none";
+  if (screenBtn) screenBtn.style.display = "none";
+  if (joinBtn) {
+    joinBtn.style.display = "flex";
+    joinBtn.disabled = false;
+  }
+
+  // --- 8. HEADER STATUS ---
+  const status = document.getElementById("status");
+  if (status) {
+    status.innerText    = "";
+    status.style.color  = "#cbd5e1";
+  }
+
+  // --- 9. CHAT — re-expand if collapsed on mobile after joining ---
+  if (window.chatContainer) {
+    window.chatContainer.classList.remove("collapsed");
+  }
+
+  // --- 10. SYSTEM MESSAGE ---
+  if (window.appendMessage) {
+    window.appendMessage("Sistem", "Izašao si iz kanala.", "#ffcc00");
+  }
+}
+
+// Wire up the leave button
+const leaveBtn = document.getElementById("leave-btn");
+if (leaveBtn) leaveBtn.onclick = leaveChannel;
+
 
 // ============================================================
 // MUTE TOGGLE
