@@ -1,33 +1,50 @@
 /**
- * js/ui.js - Korisnički interfejs, video pozadine i particle efekti
+ * js/ui.js
+ * User interface logic — video background, background music,
+ * particle effects (snow/hearts), user card rendering, and video overlays.
  */
 
-const bgVideo = document.getElementById("bgVideo");
+// ============================================================
+// DOM REFERENCES
+// ============================================================
+const bgVideo     = document.getElementById("bgVideo");
 const videoToggle = document.getElementById("videoToggle");
-const audio = document.getElementById("myAudio");
-const audioBtn = document.getElementById("audioToggle");
-const snowToggle = document.getElementById("snowToggle");
+const audio       = document.getElementById("myAudio");
+const audioBtn    = document.getElementById("audioToggle");
+const snowToggle  = document.getElementById("snowToggle");
 
+// ============================================================
+// BACKGROUND MUSIC
+// Start at a low volume so it doesn't startle users on toggle
+// ============================================================
 if (audio) audio.volume = 0.1;
 
+// ============================================================
+// VIDEO BACKGROUND TOGGLE
+// Play/pause the ambient background video and update the button icon
+// ============================================================
 if (videoToggle && bgVideo) {
   videoToggle.onclick = () => {
     if (bgVideo.paused) {
       bgVideo.play();
-      videoToggle.innerText = "🎬";
+      videoToggle.innerText = "🎬"; // Playing state
     } else {
       bgVideo.pause();
-      videoToggle.innerText = "🚫";
+      videoToggle.innerText = "🚫"; // Paused state
     }
   };
 }
 
+// ============================================================
+// AUDIO TOGGLE
+// Play/pause background music and reflect state via icon + CSS class
+// ============================================================
 if (audioBtn && audio) {
   audioBtn.onclick = () => {
     if (audio.paused) {
       audio.play();
       audioBtn.innerText = "🔊";
-      audioBtn.classList.add("playing");
+      audioBtn.classList.add("playing");    // Triggers pink glow style in CSS
     } else {
       audio.pause();
       audioBtn.innerText = "🎵";
@@ -36,63 +53,80 @@ if (audioBtn && audio) {
   };
 }
 
+// ============================================================
+// SNOW / PARTICLE TOGGLE (mobile only, hidden on desktop via CSS)
+// Restarts the particle system if toggled on; particles fade out naturally if off
+// ============================================================
 if (snowToggle) {
   snowToggle.onclick = () => {
     window.isSnowing = !window.isSnowing;
 
     if (window.isSnowing) {
-      window.restartSnow(); 
+      window.restartSnow(); // Refill the particle pool immediately
     }
-    
+
+    // Dim the button when the effect is off
     snowToggle.style.opacity = window.isSnowing ? "1" : "0.5";
   };
 }
 
-// Crtanje korisnika u Grid
+// ============================================================
+// USER CARD RENDERER
+// Builds and inserts a participant card into #user-grid.
+// Skips creation if a card for this uid already exists.
+// ============================================================
 window.drawUser = (uid, username, icon, isMe = false) => {
-  if (document.getElementById(`user-${uid}`)) return;
+  if (document.getElementById(`user-${uid}`)) return; // Guard: no duplicate cards
 
+  // Local user keeps their pre-assigned icon; remote users get a random animal
   const displayIcon = isMe
     ? icon
     : window.animals[Math.floor(Math.random() * window.animals.length)];
+
   const grid = document.getElementById("user-grid");
   if (!grid) return;
 
+  // --- Card wrapper ---
   const card = document.createElement("div");
-  card.id = `user-${uid}`;
+  card.id        = `user-${uid}`;
   card.className = "user-card";
+  // Local user card toggles mute on click; remote cards expand the volume slider
   card.onclick = isMe
     ? () => window.toggleMute()
     : () => card.classList.toggle("active");
 
-  // Avatar container
+  // --- Avatar ---
   const avatarContainer = document.createElement("div");
   avatarContainer.className = "avatar-container";
+
   const avatar = document.createElement("div");
-  avatar.className = "avatar";
-  avatar.id = `avatar-${uid}`;
+  avatar.className  = "avatar";
+  avatar.id         = `avatar-${uid}`; // Used by the volume-indicator listener in rtc.js
   avatar.textContent = displayIcon;
+
   avatarContainer.appendChild(avatar);
   card.appendChild(avatarContainer);
 
-  // Username (escaped)
+  // --- Username label ---
   const nameDiv = document.createElement("div");
   nameDiv.className = "username";
+  // Escape to prevent XSS if the username contains HTML characters
   nameDiv.textContent = `${window.escapeHtml ? window.escapeHtml(username) : username}${isMe ? " (Ti)" : ""}`;
   card.appendChild(nameDiv);
 
-  // Volume controls
+  // --- Volume slider (remote users only) ---
   if (!isMe) {
     const vc = document.createElement("div");
     vc.className = "volume-controls";
+    // Stop clicks on the slider from bubbling up and toggling the card's active state
     vc.addEventListener("click", (e) => e.stopPropagation());
 
     const input = document.createElement("input");
-    input.type = "range";
+    input.type      = "range";
     input.className = "volume-slider";
-    input.min = 0;
-    input.max = 100;
-    input.value = 100;
+    input.min   = 0;
+    input.max   = 100;
+    input.value = 100; // Default: full volume
     input.addEventListener("input", function () {
       window.adjustVolume(uid, this.value);
     });
@@ -104,62 +138,91 @@ window.drawUser = (uid, username, icon, isMe = false) => {
   grid.appendChild(card);
 };
 
+// ============================================================
+// VIDEO OVERLAY — SHOW
+// Hides the emoji avatar and renders a live video track inside the card.
+// Also wires up a click-to-fullscreen gesture on the video wrapper.
+// ============================================================
 window.playVideoInCard = (uid, track) => {
   const container = document.querySelector(`#user-${uid} .avatar-container`);
   if (!container) return;
+
+  // Hide the emoji so the video fills the same space
   container.querySelector(".avatar").style.display = "none";
-  let videoDiv =
-    document.getElementById(`video-wrapper-${uid}`) ||
-    document.createElement("div");
-  videoDiv.id = `video-wrapper-${uid}`;
+
+  // Reuse an existing wrapper div if one already exists (e.g. screen share restart)
+  let videoDiv = document.getElementById(`video-wrapper-${uid}`) || document.createElement("div");
+  videoDiv.id        = `video-wrapper-${uid}`;
   videoDiv.className = "video-container";
+
+  // Click toggles fullscreen for the video
   videoDiv.onclick = (e) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Don't trigger the card's mute/active toggle
     if (!document.fullscreenElement) videoDiv.requestFullscreen?.();
     else document.exitFullscreen?.();
   };
+
   container.appendChild(videoDiv);
-  track.play(videoDiv.id);
+  track.play(videoDiv.id); // Agora renders the track into the div by its ID
 };
 
+// ============================================================
+// VIDEO OVERLAY — HIDE
+// Removes the video wrapper and restores the emoji avatar
+// ============================================================
 window.removeVideoFromCard = (uid) => {
   document.getElementById(`video-wrapper-${uid}`)?.remove();
+
   const avatar = document.querySelector(`#user-${uid} .avatar`);
   if (avatar) avatar.style.display = "flex";
 };
 
-// Particle efekat (Sneg/Srca)
+// ============================================================
+// PARTICLE EFFECT (Snow / Hearts)
+// IIFE so all canvas state is encapsulated and doesn't pollute global scope.
+// Renders either ❄ snowflakes or ❤ hearts depending on the username.
+// ============================================================
 (function () {
+
+  // Fixed canvas sits behind all content (z-index: -1, pointer-events: none)
   const canvas = document.createElement("canvas");
   Object.assign(canvas.style, {
-    position: "fixed",
-    top: "0",
-    left: "0",
-    width: "100vw",
-    height: "100vh",
-    pointerEvents: "none",
-    zIndex: "-1",
+    position:      "fixed",
+    top:           "0",
+    left:          "0",
+    width:         "100vw",
+    height:        "100vh",
+    pointerEvents: "none", // Clicks pass straight through
+    zIndex:        "-1",
   });
   document.body.appendChild(canvas);
   const ctx = canvas.getContext("2d");
 
   let particles = [];
-  window.isSnowing = true; // Control variable
 
+  // Global flag read by the snow toggle button and the draw loop
+  window.isSnowing = true;
+
+  // Easter egg: users whose name starts with "Pako" get red hearts instead of snowflakes
   const isPako = window.myUsername?.startsWith("Pako");
 
-  // Helper to create a single particle
+  // ---- Particle factory ----
+  // yPos lets us distribute particles across the full height on init,
+  // or start them above the viewport (-canvas.height) when restarting
   function createParticle(yPos) {
     return {
-      x: Math.random() * canvas.width,
-      y: yPos,
-      speed: 0.5 + Math.random(),
-      size: isPako ? 15 : 3,
+      x:      Math.random() * canvas.width,
+      y:      yPos,
+      speed:  0.5 + Math.random(),        // Slight speed variance for depth effect
+      size:   isPako ? 15 : 3,
       symbol: isPako ? "❤" : "❄",
     };
   }
 
-  // Global function to refill particles when toggled ON
+  /**
+   * Refills the particle pool up to 100 when the effect is toggled back on.
+   * New particles start above the viewport so they drift in naturally.
+   */
   window.restartSnow = () => {
     const targetCount = 100;
     if (particles.length < targetCount) {
@@ -170,41 +233,48 @@ window.removeVideoFromCard = (uid) => {
     }
   };
 
+  /** Resizes the canvas to match the viewport and reseeds the particle array */
   function resize() {
-    canvas.width = window.innerWidth;
+    canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
+    // Distribute initial particles across the full canvas height
     particles = Array.from({ length: 100 }, () =>
-      createParticle(Math.random() * canvas.height),
+      createParticle(Math.random() * canvas.height)
     );
   }
 
   window.addEventListener("resize", resize);
-  resize();
+  resize(); // Initial sizing
 
+  // ---- Draw loop ----
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Iterate backwards so we can safely splice/remove items
+    // Iterate backwards so splicing doesn't skip items
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
+
       ctx.fillStyle = isPako ? "red" : "white";
-      ctx.font = `${p.size * 2}px serif`;
+      ctx.font      = `${p.size * 2}px serif`;
       ctx.fillText(p.symbol, p.x, p.y);
 
-      p.y += p.speed;
+      p.y += p.speed; // Move particle downward each frame
 
+      // When a particle exits the bottom of the canvas:
       if (p.y > canvas.height) {
         if (window.isSnowing) {
-          // Keep looping if snow is enabled
+          // Loop it back to the top with a new random X position
           p.y = -20;
           p.x = Math.random() * canvas.width;
         } else {
-          // Remove from array if snow is disabled (they "fall out" of the world)
+          // Remove it — existing particles "fall out" gracefully instead of cutting off instantly
           particles.splice(i, 1);
         }
       }
     }
+
     requestAnimationFrame(draw);
   }
+
   draw();
 })();

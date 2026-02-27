@@ -1,41 +1,75 @@
 /**
- * js/chat.js - Logika za poruke, komande i autocomplete
+ * js/chat.js
+ * Handles all chat logic: rendering messages, slash commands,
+ * emoji picker, file uploads, autocomplete, drag-to-move, and AI bot.
  */
-const chatInput = document.getElementById("chat-input");
+
+// ============================================================
+// DOM REFERENCES
+// ============================================================
+const chatInput    = document.getElementById("chat-input");
 const chatMessages = document.getElementById("chat-messages");
-const autoMenu = document.getElementById("autocomplete-menu");
-const sendBtn = document.getElementById("send-btn");
-const emojiBtn = document.getElementById("emoji-btn");
-const emojiPicker = document.getElementById("emoji-picker");
+const autoMenu     = document.getElementById("autocomplete-menu");
+const sendBtn      = document.getElementById("send-btn");
+const emojiBtn     = document.getElementById("emoji-btn");
+const emojiPicker  = document.getElementById("emoji-picker");
 const chatContainer = document.getElementById("chat-container");
-const dragHandle = document.getElementById("chat-drag-handle");
-const uploadBtn = document.getElementById("upload-btn");
-const fileInput = document.getElementById("file-input");
-const settingsBtn = document.getElementById("settings-btn");
+const dragHandle   = document.getElementById("chat-drag-handle");
+const uploadBtn    = document.getElementById("upload-btn");
+const fileInput    = document.getElementById("file-input");
+const settingsBtn  = document.getElementById("settings-btn");
 const settingsMenu = document.getElementById("settings-menu");
 
-// Make chatContainer global for other scripts
+// ASCII art banner shown in chat on first load
+const welcomeArt = `
+<pre style="font-family: monospace; color: #4ade80; line-height: 1.2; font-size: 10px;">
+ _      _____ _   _ _   _______ _____ _____ 
+| |    |_   _| \\ | | | / /_   _/  __ \\  ___|
+| |      | | |  \\| | |/ /  | | | /  \\/ |__  
+| |      | | | . \` |    \\  | | | |   |  __| 
+| |____ _| |_| |\\  | |\\  \\_| |_| \\__/\\ |___ 
+\\_____/\\___/\\_| \\_\\_| \\_/\\___/ \\____/\\____/
+</pre>
+<small style="color: #60a5fa;">/help za listu komadni</small>`;
+
+// ============================================================
+// STATE
+// ============================================================
+
+// Stores previously sent messages/commands for up/down arrow navigation
+let commandHistory = [];
+let historyIndex = -1;
+
+// Expose chatContainer globally so other scripts can reference it
 window.chatContainer = chatContainer;
 
+// Tracks which autocomplete item is currently highlighted
 let selectedIndex = 0;
 
+// ============================================================
+// FIREBASE AUTH
+// Waits for anonymous auth before initialising the chat listener
+// ============================================================
 firebase.auth().onAuthStateChanged((user) => {
   if (user) {
     console.log("Authenticated! Starting chat...");
     startChat();
 
-    // Safety timeout: remove skeleton after 5 seconds if no messages arrive
+    // Safety net: remove the skeleton loader after 5 s if no messages arrive
     setTimeout(() => {
       const skeleton = document.getElementById("chat-skeleton-loader");
       if (skeleton) skeleton.remove();
     }, 5000);
   } else {
+    // Sign in anonymously — no account needed
     firebase.auth().signInAnonymously();
   }
 });
 
-// Show skeleton immediately on load
-// TODO: Handle case where user has no messages and skeleton stays forever (maybe add timeout to remove it after 5s or so)
+// ============================================================
+// SKELETON LOADER
+// Show placeholder bubbles immediately while messages are loading
+// ============================================================
 if (chatMessages) {
   chatMessages.innerHTML = `
     <div id="chat-skeleton-loader" class="chat-loading-skeleton">
@@ -47,7 +81,10 @@ if (chatMessages) {
   `;
 }
 
-// --- FUNKCIJA ZA PRIKAZ PORUKA ---
+// ============================================================
+// MESSAGE RENDERING
+// appendMessage — creates and appends a single chat bubble
+// ============================================================
 window.appendMessage = (
   name,
   text = "",
@@ -57,10 +94,11 @@ window.appendMessage = (
 ) => {
   if (!chatMessages) return;
 
+  // Build a HH:MM timestamp if the message carries one
   let timeString = "";
   if (data && data.timestamp) {
-    const date = new Date(data.timestamp);
-    const hours = date.getHours().toString().padStart(2, "0");
+    const date    = new Date(data.timestamp);
+    const hours   = date.getHours().toString().padStart(2, "0");
     const minutes = date.getMinutes().toString().padStart(2, "0");
     timeString = `<span class="chat-time" style="font-size: 0.75rem; opacity: 0.5; margin-right: 5px;">${hours}:${minutes}</span>`;
   }
@@ -68,11 +106,15 @@ window.appendMessage = (
   const msgDiv = document.createElement("div");
   msgDiv.className = "chat-msg";
 
+  // Align own messages to the right and tint them green
   const isMe = data && data.username === window.myUsername;
   msgDiv.style.alignSelf = isMe ? "flex-end" : "flex-start";
   if (isMe) msgDiv.style.backgroundColor = "rgba(74, 222, 128, 0.1)";
+
+  // Coloured left/right border indicates the sender
   msgDiv.style[isMe ? "borderRight" : "borderLeft"] = `3px solid ${color}`;
 
+  // Delegate to the appropriate renderer based on message type
   if (data && data.type === "poll") {
     renderPoll(msgDiv, snapshotKey, data, color, timeString);
   } else {
@@ -82,59 +124,56 @@ window.appendMessage = (
   chatMessages.appendChild(msgDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
+  // Second scroll after a short delay to account for late-rendering media
   setTimeout(() => {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }, 200);
 };
 
-function escapeHtml(str) {
-  if (str === null || typeof str === "undefined") return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
+// ============================================================
+// STANDARD MESSAGE RENDERER
+// Handles bot messages differently — splits question/answer visually
+// ============================================================
 function renderStandardMessage(msgDiv, name, text, color, timeString) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const safeText = escapeHtml(text);
 
   let formattedText;
+
   if (name.includes("🤖 Bot")) {
+    // Bot responses: highlight the question line in amber, answer in white
     const parts = safeText.split("\n");
     if (parts.length >= 2) {
       const questionPart = parts[0];
-      const answerPart = parts.slice(1).join("\n"); // In case there are more lines
+      const answerPart   = parts.slice(1).join("\n");
       formattedText = `<div style="color: #fbbf24; margin-bottom: 5px;">${questionPart}</div><div style="color: #ffffff;">${answerPart}</div>`;
     } else {
-      formattedText = safeText.replace(urlRegex, (url) =>
-        formatMediaLinks(url),
-      );
+      formattedText = safeText.replace(urlRegex, (url) => formatMediaLinks(url));
     }
   } else {
-    // Zamena linkova medijima
+    // Regular messages: replace URLs with rich media embeds
     formattedText = safeText.replace(urlRegex, (url) => formatMediaLinks(url));
   }
 
   msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${escapeHtml(name)}: </b><span>${formattedText}</span>`;
 }
 
+// ============================================================
+// MEDIA LINK FORMATTER
+// Detects URL type and returns the appropriate HTML embed/card
+// ============================================================
 function formatMediaLinks(url) {
-  const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(url);
-  const isVideo = /\.(mp4|webm|ogg)$/i.test(url);
-  const isAudio = /\.(mp3|wav)$/i.test(url);
-  const isDoc = /\.(zip|rar|7z|pdf|doc|docx|txt)$/i.test(url);
-  const ytMatch = url.match(
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
-  );
-  const spotifyMatch = url.match(
-    /open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/,
-  );
+  const isImage   = /\.(jpeg|jpg|gif|png|webp)$/i.test(url);
+  const isVideo   = /\.(mp4|webm|ogg)$/i.test(url);
+  const isAudio   = /\.(mp3|wav)$/i.test(url);
+  const isDoc     = /\.(zip|rar|7z|pdf|doc|docx|txt)$/i.test(url);
+  const ytMatch   = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  const spotifyMatch = url.match(/open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/);
 
+  // Extract a human-readable filename from the URL
   const fileName = url.split("/").pop().split("?")[0];
 
+  // --- Image ---
   if (isImage) {
     return `
       <div class="media-card">
@@ -143,6 +182,7 @@ function formatMediaLinks(url) {
       </div>`;
   }
 
+  // --- Video ---
   if (isVideo) {
     return `
       <div class="media-card">
@@ -153,6 +193,7 @@ function formatMediaLinks(url) {
       </div>`;
   }
 
+  // --- Audio ---
   if (isAudio) {
     return `
       <div class="media-card media-card--audio">
@@ -166,16 +207,12 @@ function formatMediaLinks(url) {
       </div>`;
   }
 
+  // --- Document (ZIP, PDF, DOCX, etc.) ---
   if (isDoc) {
     const ext = fileName.split(".").pop().toUpperCase();
     const icons = {
-      ZIP: "🗜",
-      RAR: "🗜",
-      "7Z": "🗜",
-      PDF: "📄",
-      DOC: "📝",
-      DOCX: "📝",
-      TXT: "📃",
+      ZIP: "🗜", RAR: "🗜", "7Z": "🗜",
+      PDF: "📄", DOC: "📝", DOCX: "📝", TXT: "📃",
     };
     const icon = icons[ext] || "📁";
     return `
@@ -189,6 +226,7 @@ function formatMediaLinks(url) {
       </div>`;
   }
 
+  // --- YouTube embed ---
   if (ytMatch) {
     return `
       <div class="media-card media-card--yt">
@@ -200,9 +238,10 @@ function formatMediaLinks(url) {
       </div>`;
   }
 
+  // --- Spotify embed (track, album, or playlist) ---
   if (spotifyMatch) {
     const [, type, id] = spotifyMatch;
-    const h = type === "track" ? "80" : "152";
+    const h = type === "track" ? "80" : "152"; // Compact height for tracks
     return `
       <div class="media-card media-card--spotify">
         <iframe src="https://open.spotify.com/embed/${type}/${id}"
@@ -211,49 +250,66 @@ function formatMediaLinks(url) {
       </div>`;
   }
 
+  // --- Fallback: plain hyperlink ---
   return `<a href="${url}" target="_blank" class="media-link-plain">🔗 ${url}</a>`;
 }
 
+// ============================================================
+// POLL RENDERER
+// Builds an interactive voting card inside a message bubble
+// ============================================================
 function renderPoll(msgDiv, snapshotKey, data, color, timeString) {
-  const safeName = escapeHtml(data.username);
+  const safeName     = escapeHtml(data.username);
   const safeQuestion = escapeHtml(data.question || "");
 
   msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${safeName} je pokrenuo anketu:</b><br>`;
+
+  // Poll question heading
   const qDiv = document.createElement("div");
-  qDiv.style.cssText =
-    "margin: 10px 0; font-size: 1.1rem; font-weight: bold; color: white;";
+  qDiv.style.cssText = "margin: 10px 0; font-size: 1.1rem; font-weight: bold; color: white;";
   qDiv.textContent = safeQuestion;
   msgDiv.appendChild(qDiv);
 
+  // One button per option — clicking calls window.vote()
   if (data.options) {
     data.options.forEach((opt) => {
-      const count = data.votes && data.votes[opt] ? data.votes[opt] : 0;
+      const count  = data.votes && data.votes[opt] ? data.votes[opt] : 0;
       const button = document.createElement("button");
       button.className = "poll-btn";
+      // ID format lets child_changed listener update the count in real time
       button.innerHTML = `<span class="opt-text">${escapeHtml(opt)}</span>
-                                <span class="opt-count" id="count-${snapshotKey}-${encodeURIComponent(opt)}">${count}</span>`;
+                          <span class="opt-count" id="count-${snapshotKey}-${encodeURIComponent(opt)}">${count}</span>`;
       button.onclick = () => window.vote && window.vote(snapshotKey, opt);
       msgDiv.appendChild(button);
     });
   }
 }
 
-// --- SLANJE PORUKA ---
+// ============================================================
+// SEND MESSAGE
+// Validates input, records history, checks for a command, then pushes to Firebase
+// ============================================================
 window.sendMessage = async () => {
   const text = (chatInput && chatInput.value ? chatInput.value : "").trim();
-
   if (!text || !window.chatRef) return;
 
+  // Record in command history (capped at 50 entries)
+  commandHistory.unshift(text);
+  if (commandHistory.length > 50) commandHistory.pop();
+  historyIndex = -1; // Reset navigation index
+
+  // If it's a slash command, handle it locally and skip Firebase push
   if (handleCommand(text)) {
     chatInput.value = "";
     return;
   }
 
+  // Push regular message to Firebase Realtime Database
   try {
     await window.chatRef.push({
-      username: window.myUsername,
-      text: text,
-      color: window.myColor || "#4ade80",
+      username:  window.myUsername,
+      text:      text,
+      color:     window.myColor || "#4ade80",
       timestamp: Date.now(),
     });
     chatInput.value = "";
@@ -264,27 +320,33 @@ window.sendMessage = async () => {
 
 if (sendBtn) sendBtn.onclick = window.sendMessage;
 
-// --- KOMANDE ---
+// ============================================================
+// SLASH COMMAND HANDLER
+// Returns true if the input was a recognised command (suppresses Firebase push)
+// ============================================================
 function handleCommand(text) {
   if (!text.startsWith("/")) return false;
-  const args = text.split(" ");
+
+  const args    = text.split(" ");
   const command = args[0].toLowerCase();
 
   switch (command) {
+
+    // Wipe the local chat view
     case "/clear":
       chatMessages.innerHTML = "";
       return true;
+
+    // Change the user's display name for this session
     case "/nick":
       const newNick = args.slice(1).join(" ");
       if (newNick) {
         window.myUsername = newNick;
-        window.appendMessage(
-          "Sistem",
-          `Nadimak promenjen u: **${window.myUsername}**`,
-          "#ffcc00",
-        );
+        window.appendMessage("Sistem", `Nadimak promenjen u: **${window.myUsername}**`, "#ffcc00");
       }
       return true;
+
+    // Roll a random number between 1 and max (default 100)
     case "/roll":
       const max = parseInt(args[1]) || 100;
       window.chatRef.push({
@@ -292,123 +354,114 @@ function handleCommand(text) {
         text: `🎲 **${window.myUsername}** rola: **${Math.floor(Math.random() * max) + 1}** (1-${max})`,
       });
       return true;
+
+    // Ask the AI bot a question
     case "/bot":
       const prompt = args.slice(1).join(" ");
       if (!prompt) {
-        window.appendMessage(
-          "Sistem",
-          "Format: /Bot Koliko je 2+2?",
-          "#ef4444",
-        );
+        window.appendMessage("Sistem", "Format: /Bot Koliko je 2+2?", "#ef4444");
       } else {
         window.askAI(prompt);
       }
       return true;
+
+    // Create a real-time poll with multiple options
     case "/poll":
       const pollData = args.slice(1).join(" ").split(",");
       if (pollData.length < 2) {
-        window.appendMessage(
-          "Sistem",
-          "Format: /poll Pitanje , Opcija1 , Opcija2...",
-          "#ef4444",
-        );
+        window.appendMessage("Sistem", "Format: /poll Pitanje , Opcija1 , Opcija2...", "#ef4444");
         return true;
       }
       const question = pollData[0].trim();
-      const options = pollData
-        .slice(1)
-        .map((opt) => opt.trim())
-        .filter((opt) => opt !== "");
+      const options  = pollData.slice(1).map((opt) => opt.trim()).filter((opt) => opt !== "");
       const pollVotes = {};
       options.forEach((opt) => (pollVotes[opt] = 0));
 
       window.chatRef.push({
-        username: window.myUsername,
-        type: "poll",
-        question: question,
-        options: options,
-        votes: pollVotes,
-        text: "",
+        username:  window.myUsername,
+        type:      "poll",
+        question:  question,
+        options:   options,
+        votes:     pollVotes,
+        text:      "",
         timestamp: Date.now(),
       });
       return true;
+
+    // Show Agora network stats (RTT + user count)
     case "/ping":
       if (window.client && typeof window.client.getRTCStats === "function") {
         const rtc = window.client.getRTCStats();
-        window.appendMessage(
-          "Sistem",
-          `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${rtc.UserCount}`,
-          "#4ade80",
-        );
+        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${rtc.UserCount}`, "#4ade80");
       } else {
-        window.appendMessage(
-          "Sistem",
-          "🏓 Pong! Sistem je aktivan.",
-          "#4ade80",
-        );
+        window.appendMessage("Sistem", "🏓 Pong! Sistem je aktivan.", "#4ade80");
       }
       return true;
+
+    // Send a private message visible only to sender and recipient
     case "/msg":
-      const target = args[1];
+      const target     = args[1];
       const privateMsg = args.slice(2).join(" ");
       if (target && privateMsg) {
         window.chatRef.push({
-          username: window.myUsername,
-          text: privateMsg,
-          to: target,
-          type: "private",
+          username:  window.myUsername,
+          text:      privateMsg,
+          to:        target,
+          type:      "private",
           timestamp: Date.now(),
         });
       } else {
-        window.appendMessage(
-          "Sistem",
-          "Greška: Koristi /msg Korisnik Poruka",
-          "#ef4444",
-        );
+        window.appendMessage("Sistem", "Greška: Koristi /msg Korisnik Poruka", "#ef4444");
       }
       return true;
+
+    // Display an inline command reference card
     case "/help":
       const helpHtml = `
-            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border: 1px solid rgba(74, 222, 128, 0.3);">
-              <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 0.85rem;">
-                <code style="color: #fbbf24;text-align: left;">/nick Ime</code> <span>Promena imena</span>
-                <code style="color: #fbbf24;text-align: left;">/poll P, O1, O2</code> <span>Anketa</span>
-                <code style="color: #fbbf24;text-align: left;">/roll 100</code> <span>Kockica</span>
-                <code style="color: #fbbf24;text-align: left;">/clear</code> <span>Očisti čet</span>
-                <code style="color: #fbbf24;text-align: left;">/ping</code> <span>Ping test Agora</span>
-                <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
-                <code style="color: #fbbf24;text-align: left;">/bot {pitanje}</code> <span>Postavi pitanje botu</span>
-              </div>
-            </div>`;
+        <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border: 1px solid rgba(74, 222, 128, 0.3);">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 0.85rem;">
+            <code style="color: #fbbf24;text-align: left;">/nick Ime</code>        <span>Promena imena</span>
+            <code style="color: #fbbf24;text-align: left;">/poll P, O1, O2</code>  <span>Anketa</span>
+            <code style="color: #fbbf24;text-align: left;">/roll 100</code>         <span>Kockica</span>
+            <code style="color: #fbbf24;text-align: left;">/clear</code>            <span>Očisti čet</span>
+            <code style="color: #fbbf24;text-align: left;">/ping</code>             <span>Ping test Agora</span>
+            <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
+            <code style="color: #fbbf24;text-align: left;">/bot {pitanje}</code>    <span>Postavi pitanje botu</span>
+          </div>
+        </div>`;
       window.appendSystemHTML(helpHtml);
-      // window.appendMessage("Sistem", helpHtml, "#4ade80");
       return true;
+
     default:
       return false;
   }
 }
 
-// --- FIREBASE LISTENERS (POPRAVLJENI) ---
+// ============================================================
+// FIREBASE LISTENERS
+// startChat — called once after auth, sets up child_added and child_changed
+// ============================================================
 function startChat() {
   window.chatRef = firebase.database().ref(`messages/${window.CHANNEL}`);
 
-  // Slušaj nove poruke
-  window.chatRef.limitToLast(50).on("child_added", (snapshot) => {
-    const skeleton = document.getElementById("chat-skeleton-loader");
-    if (skeleton) {
-      skeleton.remove();
-    }
-    const data = snapshot.val();
-    const key = snapshot.key;
+  // Prepend the welcome banner (ASCII art)
+  window.appendSystemHTML(welcomeArt, true);
 
-    // Privatne poruke
+  // Listen to the last 50 messages; also fires for each new incoming message
+  window.chatRef.limitToLast(50).on("child_added", (snapshot) => {
+
+    // Remove skeleton loader on first real message
+    const skeleton = document.getElementById("chat-skeleton-loader");
+    if (skeleton) skeleton.remove();
+
+    const data = snapshot.val();
+    const key  = snapshot.key;
+
+    // Private messages are only shown to the sender and the named recipient
     if (data.type === "private") {
-      const isMeSender =
-        (data.username || "").toLowerCase() ===
-        (window.myUsername || "").toLowerCase();
-      const isMeTarget =
-        (data.to || "").toLowerCase() ===
-        (window.myUsername || "").toLowerCase();
+      const isMeSender = (data.username || "").toLowerCase() === (window.myUsername || "").toLowerCase();
+      const isMeTarget = (data.to || "").toLowerCase()       === (window.myUsername || "").toLowerCase();
+
       if (isMeSender || isMeTarget) {
         const prefix = isMeSender
           ? `[privatna za ${escapeHtml(data.to || "")}]`
@@ -418,31 +471,27 @@ function startChat() {
       return;
     }
 
-    // Obične poruke i ankete
-    window.appendMessage(
-      data.username,
-      data.text,
-      data.color || "#4ade80",
-      key,
-      data,
-    );
+    // Standard messages and polls
+    window.appendMessage(data.username, data.text, data.color || "#4ade80", key, data);
   });
 
-  // Slušaj promene (za glasanje u realnom vremenu)
+  // Listen for updates to existing messages (used for live poll vote counts)
   window.chatRef.on("child_changed", (snapshot) => {
     const data = snapshot.val();
     if (data && data.type === "poll" && Array.isArray(data.options)) {
       data.options.forEach((opt) => {
-        const el = document.getElementById(
-          `count-${snapshot.key}-${encodeURIComponent(opt)}`,
-        );
+        const el = document.getElementById(`count-${snapshot.key}-${encodeURIComponent(opt)}`);
         if (el) el.innerText = data.votes && (data.votes[opt] || 0);
       });
     }
   });
 }
 
-// --- GLASANJE ---
+// ============================================================
+// VOTING
+// Uses a Firebase transaction to safely increment a vote counter
+// Prevents double-voting by recording the poll ID in localStorage
+// ============================================================
 window.vote = (pollId, option) => {
   const votedKey = `voted_${pollId}`;
   if (localStorage.getItem(votedKey)) {
@@ -452,21 +501,25 @@ window.vote = (pollId, option) => {
 
   const safeOptionKey = encodeURIComponent(option);
   const pollRef = window.chatRef.child(`${pollId}/votes/${safeOptionKey}`);
-  pollRef.transaction((currentVotes) => {
-    return (currentVotes || 0) + 1;
-  });
 
+  // Atomic increment — safe under concurrent updates
+  pollRef.transaction((currentVotes) => (currentVotes || 0) + 1);
+
+  // Mark as voted so the user can't vote again in this session
   localStorage.setItem(votedKey, "true");
 };
 
-// --- OSTALO (Upload, Emoji, Autocomplete) ---
+// ============================================================
+// FILE UPLOAD
+// Tries Catbox/Litterbox directly, falls back to a CORS proxy
+// ============================================================
 async function uploadFile(file, expiry) {
   const formData = new FormData();
   formData.append("reqtype", "fileupload");
   formData.append("fileToUpload", file);
 
+  // Permanent storage → Catbox; temporary → Litterbox with a time limit
   let apiUrl = "https://catbox.moe/user/api.php";
-
   if (expiry !== "trajno") {
     formData.append("time", expiry);
     apiUrl = "https://litterbox.catbox.moe/resources/internals/api.php";
@@ -476,6 +529,7 @@ async function uploadFile(file, expiry) {
     const response = await fetch(apiUrl, { method: "POST", body: formData });
     return (await response.text()).trim();
   } catch (e) {
+    // Direct request failed (likely CORS) — retry via proxy
     console.error("Direktan upload nije uspeo, pokušavam preko proxy-ja...", e);
     try {
       const proxyRes = await fetch("https://corsproxy.io/?" + apiUrl, {
@@ -488,37 +542,39 @@ async function uploadFile(file, expiry) {
     }
   }
 }
-async function handleFileUpload(file) {
+
+/** Uploads a file and posts the resulting URL as a chat message */
+window.handleFileUpload = async (file) => {
   if (window.appendMessage)
     window.appendMessage("Sistem", `Slanje fajla: ${file.name}...`, "#60a5fa");
 
   const expirySelect = document.getElementById("upload-expiry");
-  const expiry = expirySelect ? expirySelect.value : "trajno";
+  const expiry  = expirySelect ? expirySelect.value : "trajno";
   const fileUrl = await uploadFile(file, expiry);
 
   if (fileUrl && fileUrl.startsWith("http")) {
+    // Post the URL to chat — the media formatter will embed it appropriately
     window.chatRef.push({
-      username: window.myUsername,
-      text: `Dostupno ${expiry}: ${fileUrl}`,
-      color: window.myColor || "#ffffff",
+      username:  window.myUsername,
+      text:      `Dostupno ${expiry}: ${fileUrl}`,
+      color:     window.myColor || "#ffffff",
       timestamp: Date.now(),
     });
   } else {
     const errorDetail = fileUrl || "Problem sa serverom";
     if (window.appendMessage)
-      window.appendMessage(
-        "Sistem",
-        `Greška pri slanju: ${errorDetail}`,
-        "#f87171",
-      );
+      window.appendMessage("Sistem", `Greška pri slanju: ${errorDetail}`, "#f87171");
   }
 }
 
-// --- PASTE PODRŠKA ---
+// ============================================================
+// PASTE & DRAG-AND-DROP INTO CHAT INPUT
+// ============================================================
 if (chatInput) {
+
+  // Handle images/files pasted from the clipboard
   chatInput.onpaste = async (e) => {
-    const items =
-      e.clipboardData && e.clipboardData.items ? e.clipboardData.items : [];
+    const items = e.clipboardData && e.clipboardData.items ? e.clipboardData.items : [];
     for (let item of items) {
       if (item.kind === "file") {
         const file = item.getAsFile();
@@ -527,46 +583,49 @@ if (chatInput) {
     }
   };
 
-  // --- DRAG & DROP PODRŠKA ---
+  // Handle files dropped onto the input field
   chatInput.ondrop = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     chatInput.classList.remove("drag-active");
 
-    const files =
-      e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : null;
-    if (files && files.length > 0) {
-      handleFileUpload(files[0]);
-    }
+    const files = e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : null;
+    if (files && files.length > 0) handleFileUpload(files[0]);
   };
 
+  // Visual feedback while a file is being dragged over the input
   chatInput.ondragover = (e) => {
     e.preventDefault();
     chatInput.style.background = "rgba(74, 222, 128, 0.05)";
     chatInput.classList.add("drag-active");
   };
 
+  // Restore normal styling when the drag leaves
   chatInput.ondragleave = () => {
     chatInput.style.background = "transparent";
     chatInput.classList.remove("drag-active");
   };
 }
 
+// ============================================================
+// CHAT INPUT — AUTOCOMPLETE & KEYBOARD SHORTCUTS
+// ============================================================
 if (chatInput) {
+
+  // Show autocomplete menu when the user starts typing a slash command
   chatInput.oninput = () => {
     const val = chatInput.value;
     if (val.startsWith("/")) {
       const matches = (window.commands || []).filter((c) =>
-        c.cmd.startsWith(val.toLowerCase()),
+        c.cmd.startsWith(val.toLowerCase())
       );
       if (matches.length > 0) {
         autoMenu.innerHTML = matches
-          .map(
-            (c) => `
-        <div class="autocomplete-item" onclick="applyCommand('${c.cmd}')">
-          <span>${escapeHtml(c.cmd)}</span><span class="command-desc">${escapeHtml(c.desc)}</span>
-        </div>`,
-          )
+          .map((c) => `
+            <div class="autocomplete-item" onclick="applyCommand('${c.cmd}')">
+              <span>${escapeHtml(c.cmd)}</span>
+              <span class="command-desc">${escapeHtml(c.desc)}</span>
+            </div>`)
           .join("");
         autoMenu.style.display = "block";
       } else {
@@ -579,32 +638,61 @@ if (chatInput) {
 
   chatInput.onkeydown = (e) => {
     if (e.key === "Enter") {
+      // Send message and close any open overlays
       if (emojiPicker) emojiPicker.classList.add("hidden");
-      if (autoMenu) autoMenu.style.display = "none";
+      if (autoMenu)    autoMenu.style.display = "none";
       window.sendMessage();
+
+    } else if (e.key === "ArrowUp") {
+      // Navigate backwards through command history
+      if (historyIndex < commandHistory.length - 1) {
+        historyIndex++;
+        chatInput.value = commandHistory[historyIndex];
+      }
+      e.preventDefault();
+
+    } else if (e.key === "ArrowDown") {
+      // Navigate forwards through command history (empty = clear input)
+      if (historyIndex > 0) {
+        historyIndex--;
+        chatInput.value = commandHistory[historyIndex];
+      } else {
+        historyIndex    = -1;
+        chatInput.value = "";
+      }
+      e.preventDefault();
     }
   };
 }
-// --- UPLOAD BUTTON FILE ---
+
+// ============================================================
+// FILE UPLOAD BUTTON
+// Clicking the ➕ button opens the hidden file picker
+// ============================================================
 if (uploadBtn && fileInput) {
   uploadBtn.onclick = () => fileInput.click();
 
   fileInput.onchange = (e) => {
     const selectedFile = e.target.files[0];
-
     if (selectedFile) {
       window.handleFileUpload(selectedFile);
-      fileInput.value = "";
+      fileInput.value = ""; // Reset so the same file can be re-selected
     }
   };
 }
-
+// ============================================================
+// AUTOCOMPLETE — apply selected command to input
+// ============================================================
 window.applyCommand = (cmd) => {
-  chatInput.value = cmd + " ";
+  chatInput.value = cmd + " "; // Trailing space so the user can type args immediately
   chatInput.focus();
   autoMenu.style.display = "none";
 };
 
+// ============================================================
+// EMOJI PICKER
+// Toggle visibility on button click; close when clicking outside
+// ============================================================
 if (emojiBtn && emojiPicker) {
   emojiBtn.onclick = (e) => {
     e.stopPropagation();
@@ -618,6 +706,21 @@ if (emojiBtn && emojiPicker) {
   });
 }
 
+// ============================================================
+// GLOBAL KEYBOARD SHORTCUT
+// Tab focuses the chat input from anywhere on the page
+// ============================================================
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Tab" && document.activeElement !== chatInput) {
+    e.preventDefault();
+    chatInput.focus();
+  }
+});
+
+// ============================================================
+// EMOJI INSERTER
+// Inserts an emoji at the current cursor position in the input
+// ============================================================
 window.addEmoji = (emoji) => {
   if (!chatInput) return;
   const start = chatInput.selectionStart;
@@ -629,33 +732,41 @@ window.addEmoji = (emoji) => {
   if (emojiPicker) emojiPicker.classList.add("hidden");
 };
 
+// ============================================================
+// DRAGGABLE CHAT PANEL
+// Lets the user reposition #chat-container by dragging the handle
+// Click without drag toggles the collapsed state
+// ============================================================
 if (chatContainer && dragHandle) {
-  let x = 0,
-    y = 0,
-    initialX = 0,
-    initialY = 0,
-    isDragging = false;
+  let x = 0, y = 0, initialX = 0, initialY = 0, isDragging = false;
+
   dragHandle.onmousedown = (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0) return; // Left-click only
+
     isDragging = false;
-    initialX = e.clientX;
-    initialY = e.clientY;
+    initialX   = e.clientX;
+    initialY   = e.clientY;
+
     document.onmousemove = (e) => {
       isDragging = true;
       x = initialX - e.clientX;
       y = initialY - e.clientY;
       initialX = e.clientX;
       initialY = e.clientY;
-      chatContainer.style.top = chatContainer.offsetTop - y + "px";
-      chatContainer.style.left = chatContainer.offsetLeft - x + "px";
+
+      // Move the panel by the delta, clearing right/bottom anchors
+      chatContainer.style.top   = chatContainer.offsetTop  - y + "px";
+      chatContainer.style.left  = chatContainer.offsetLeft - x + "px";
       chatContainer.style.bottom = "auto";
-      chatContainer.style.right = "auto";
+      chatContainer.style.right  = "auto";
     };
+
     document.onmouseup = () => {
       document.onmousemove = null;
     };
   };
-  // Toggle collapse on click (only if not dragged)
+
+  // Distinguish a click (collapse toggle) from a drag (reposition)
   dragHandle.onclick = () => {
     if (!isDragging) {
       chatContainer.classList.toggle("collapsed");
@@ -664,31 +775,30 @@ if (chatContainer && dragHandle) {
   };
 }
 
+// ============================================================
+// AI BOT (/bot command handler)
+// Tries Gemini models in order, falling back if rate-limited or unavailable
+// ============================================================
 window.askAI = async (prompt) => {
   const models = ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemma-3-4b-it"];
-  // const aiConstraint =
-  //   "Respond in the same language as the user. Be concise, direct, and brief. No fluff. ";
 
-  window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-bot", {
-    username: "🤖",
-  });
+  // Show a "thinking" placeholder immediately
+  window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-bot", { username: "🤖" });
 
   for (let modelName of models) {
     try {
       const response = await fetch(
         "https://my-proxy-vercel-kappa.vercel.app/api/gemini",
         {
-          method: "POST",
+          method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: prompt,
-            model: modelName,
-          }),
-        },
+          body:    JSON.stringify({ prompt, model: modelName }),
+        }
       );
 
       const data = await response.json();
 
+      // 429 = rate limited, 404 = model unavailable → try the next one
       if (response.status === 429 || response.status === 404) {
         console.warn(`Model ${modelName} nije uspeo, pokušavam sledeći...`);
         continue;
@@ -697,10 +807,11 @@ window.askAI = async (prompt) => {
       if (data.candidates && data.candidates[0].content.parts[0].text) {
         const aiText = data.candidates[0].content.parts[0].text;
 
+        // Push the answer to Firebase so all users see the bot response
         window.chatRef.push({
-          username: `🤖 Bot (${modelName})`,
-          text: `${window.myUsername} pita: ${prompt}\nOdgovor: ${aiText}`,
-          color: "#fbbf24",
+          username:  `🤖 Bot (${modelName})`,
+          text:      `${window.myUsername} pita: ${prompt}\nOdgovor: ${aiText}`,
+          color:     "#fbbf24",
           timestamp: Date.now(),
         });
         return;
@@ -710,38 +821,42 @@ window.askAI = async (prompt) => {
     }
   }
 
-  window.appendMessage(
-    "Sistem",
-    "Svi Bot modeli su trenutno zauzeti. Pokušajte kasnije.",
-    "#ef4444",
-  );
+  // All models failed
+  window.appendMessage("Sistem", "Svi Bot modeli su trenutno zauzeti. Pokušajte kasnije.", "#ef4444");
 };
 
-window.appendSystemHTML = (htmlContent) => {
+// ============================================================
+// SYSTEM HTML MESSAGES
+// Renders arbitrary HTML into the chat (used by /help and welcome banner)
+// atTop = true prepends instead of appending
+// ============================================================
+window.appendSystemHTML = (htmlContent, atTop = false) => {
   const msgDiv = document.createElement("div");
   msgDiv.className = "chat-msg system-msg";
   msgDiv.style.alignSelf = "center";
-  msgDiv.style.width = "90%";
+  msgDiv.style.width     = "90%";
 
-  msgDiv.innerHTML = `<b style="color: #60a5fa">Sistem:</b><br>${htmlContent}`;
-
-  chatMessages.appendChild(msgDiv);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+  if (atTop) {
+    msgDiv.innerHTML = `<b style="color: #60a5fa">Dobrodošli</b><br>${htmlContent}`;
+    chatMessages.prepend(msgDiv);
+  } else {
+    msgDiv.innerHTML = `<b style="color: #60a5fa">Komande:</b><br>${htmlContent}`;
+    chatMessages.appendChild(msgDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
 };
 
-// --- SETTINGS MENU ---
+// ============================================================
+// SETTINGS MENU
+// Toggle on gear-icon click; close when clicking anywhere else
+// ============================================================
 settingsBtn.onclick = (e) => {
   e.stopPropagation();
   settingsMenu.classList.toggle("hidden");
 };
 
-// Close menu when clicking outside
 document.addEventListener("click", (e) => {
-  if (
-    settingsMenu &&
-    !settingsMenu.contains(e.target) &&
-    e.target !== settingsBtn
-  ) {
+  if (settingsMenu && !settingsMenu.contains(e.target) && e.target !== settingsBtn) {
     settingsMenu.classList.add("hidden");
   }
 });
