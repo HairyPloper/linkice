@@ -1,3 +1,7 @@
+/* ============================================================
+   CUSTOM PROPERTIES (CSS VARIABLES)
+   Global design tokens for colors, backgrounds, and borders
+   ============================================================ */
 :root {
   --primary: #6366f1;
   --secondary: #a855f7;
@@ -7,70 +11,45 @@
   --success: #10b981;
   --danger: #ef4444;
 }
-
+/* ============================================================
+   BASE BODY STYLES
+   Full-viewport centered layout with dark radial background
+   ============================================================ */
 body {
   font-family: "Outfit", sans-serif;
+  background-color: #020617;
   background: radial-gradient(
-      circle at center,
-      #2e1065,
-      #020617 80%
-    ) !important;
+    circle at center,
+    #2e1065,
+    #020617 80%
+  ) !important;
   color: white;
   margin: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  height: 100vh;
+  height: 100dvh;
+  min-height: -webkit-fill-available;
   overflow: hidden;
+  overscroll-behavior: none;
 }
+/* ============================================================
+   BUTTONS
+   ============================================================ */
 
-/* --- AUDIO TOGGLE BUTTON --- */
+/* --- AUDIO TOGGLE — active/playing state --- */
 #audioToggle.playing {
-  color: #ec4899; 
+  color: #ec4899;
   background: rgba(236, 72, 153, 0.15);
   border-color: rgba(236, 72, 153, 0.4);
   box-shadow: 0 0 15px rgba(236, 72, 153, 0.2);
 }
 
-/* --- VIDEO BACKGROUND --- */
-.video-background {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: -2;
-  overflow: hidden;
-}
-.video-background video {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 100%;
-  min-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: cover;
-}
-.video-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(3, 7, 18, 0.5); /* Darker tint for contrast */
-  backdrop-filter: blur(2px);
-  z-index: -1;
-}
-
 /* --- VIDEO TOGGLE BUTTON --- */
 .video-toggle {
-  position: fixed;
-  bottom: 15px;
-  right: 15px;
-  width: 35px;
-  height: 35px;
+  width: 30px;
+  margin-left: 10px;
+  height: 30px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -87,32 +66,118 @@ body {
   color: white;
 }
 
-/* --- MOBILE OVERRIDES --- */
+/* ============================================================
+   VIDEO BACKGROUND
+   Full-viewport fixed video layer behind all content
+   ============================================================ */
+.video-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: -2;
+  overflow: hidden;
+}
+
+/* Centers and scales the video to cover the viewport */
+.video-background video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 100%;
+  min-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: cover;
+}
+
+/* Semi-transparent overlay to improve text contrast over video */
+.video-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(3, 7, 18, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: -1;
+}
+
+/* ============================================================
+   MOBILE OVERRIDES (max-width: 767px)
+   Hides video, repositions chat and controls for small screens
+   ============================================================ */
 @media (max-width: 767px) {
+  /* Hide video background and toggle on mobile */
   .video-background,
   .video-toggle {
     display: none !important;
   }
-  /* Hide screen share button on mobile to prevent UI clutter */
+
+  /* Show snow toggle instead */
+  .snow-toggle {
+    display: block !important;
+  }
+
+  /* Hide screen share button to prevent UI clutter on mobile */
   .screen-btn,
   #screen-btn {
     display: none !important;
   }
+
+  /* Fullscreen chat positioned between header and controls */
+  #chat-container {
+    position: fixed !important;
+    top: 120px !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: auto !important;
+    width: auto !important;
+    height: calc(100dvh - 240px) !important;
+    z-index: 999 !important;
+  }
+
+  /* Collapsed chat: hide messages and input */
+  #chat-container.collapsed #chat-messages,
+  #chat-container.collapsed .chat-input-wrapper {
+    display: none !important;
+  }
+  #chat-container.collapsed {
+    height: 50px !important;
+  }
+
+  /* Deep rich gradient for mobile background */
   body {
-    /* Deep rich gradient for mobile */
     background: radial-gradient(
       circle at center,
       #2e1065,
       #020617 80%
     ) !important;
+    padding-bottom: env(safe-area-inset-bottom, 20px) !important;
+  }
+
+  /* Stick controls to bottom center on mobile */
+  .controls {
+    position: fixed !important;
+    bottom: env(safe-area-inset-bottom, 10px) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    margin-bottom: 0 !important;
+    z-index: 1000 !important;
   }
 }
 
-/* --- HEADER --- */
+/* ============================================================
+   HEADER
+   Glassmorphism pill at the top with animated entrance
+   ============================================================ */
 .header {
-  margin-top: 20px;
+  margin-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  flex-shrink: 0;
   padding: 15px 30px;
-  min-width: 250px;
+  min-width: 300px;
   text-align: center;
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
@@ -124,18 +189,53 @@ body {
   animation: slideDown 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* Gradient title text */
 h2 {
   margin: 0;
-  font-size: 1.8rem;
-  font-weight: 700;
+  font-weight: lighter;
   background: linear-gradient(135deg, #a5b4fc, #f0abfc);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  letter-spacing: -0.5px;
   text-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
-/* --- GRID --- */
+/* ============================================================
+   LIFELINE ANIMATION
+   SVG ECG-style line drawn across the header via clip-path
+   ============================================================ */
+.header::before {
+  content: "";
+  position: absolute;
+  top: 80%;
+  left: 32%;
+  width: 41%;
+  height: 20px;
+  transform: translateY(-50%);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 24' preserveAspectRatio='none'%3E%3Cpolyline points='0,12 35,12 38,8 41,18 45,2 49,20 53,10 56,12 100,12' fill='none' stroke='%23f0abfc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat center;
+  background-size: 100% 100%;
+  opacity: 0.2;
+  z-index: 1;
+  pointer-events: none;
+  clip-path: inset(0 100% 0 0);
+  animation: drawLifeLine 3.5s infinite ease-out 1s;
+}
+
+/* Reveals the lifeline SVG from left to right */
+@keyframes drawLifeLine {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+  100% {
+    clip-path: inset(0 11% 0 0);
+  }
+}
+
+/* ============================================================
+   USER GRID
+   Centered wrapping layout for user cards
+   ============================================================ */
 #user-grid {
   display: flex;
   flex-wrap: wrap;
@@ -146,14 +246,19 @@ h2 {
   padding: 40px 20px;
   flex-grow: 1;
   overflow-y: auto;
-  align-content: center; /* Center vertically */
+  align-content: center;
 }
+
+/* Disabled button state */
 .btn:disabled {
   cursor: not-allowed;
   filter: grayscale(0.5);
 }
 
-/* --- USER CARDS --- */
+/* ============================================================
+   USER CARDS
+   Individual participant tiles with hover/active states
+   ============================================================ */
 .user-card {
   display: flex;
   flex-direction: column;
@@ -162,11 +267,11 @@ h2 {
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 24px;
   padding: 15px;
-  width: 110px; 
+  width: 110px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   position: relative;
-  overflow: visible; 
+  overflow: visible;
 }
 
 .user-card:hover {
@@ -180,7 +285,10 @@ h2 {
   transform: scale(0.95);
 }
 
-/* --- KONTEJNER --- */
+/* ============================================================
+   AVATAR
+   Square-rounded icon container for each participant
+   ============================================================ */
 .avatar-container {
   position: relative;
   width: 70px;
@@ -190,7 +298,6 @@ h2 {
   justify-content: center;
 }
 
-/* --- VRAĆEN STARI AVATAR --- */
 .avatar {
   width: 70px;
   height: 70px;
@@ -211,6 +318,7 @@ h2 {
   z-index: 1;
 }
 
+/* Muted participant — desaturated and faded */
 .avatar.muted {
   opacity: 0.5;
   filter: grayscale(1);
@@ -225,27 +333,31 @@ h2 {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-/* --- CONTROLS --- */
+/* ============================================================
+   CONTROLS BAR
+   Floating pill of action buttons at the bottom
+   ============================================================ */
 .controls {
   width: auto;
   margin-bottom: 50px;
   padding: 10px;
   display: flex;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.3); /* Transparent pill */
-  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(15px);
   border-radius: 60px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
 }
 
+/* Base button style shared across all control buttons */
 .btn {
   padding: 14px 32px;
   border-radius: 50px;
   border: none;
-  font-family: "Outfit", sans-serif;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: initial;
   cursor: pointer;
   color: white;
   transition: 0.3s;
@@ -255,6 +367,7 @@ h2 {
   gap: 8px;
 }
 
+/* Join button — primary indigo/violet gradient */
 .join-btn {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
@@ -264,6 +377,7 @@ h2 {
   box-shadow: 0 0 30px rgba(99, 102, 241, 0.6);
 }
 
+/* Leave button — subtle red-tinted ghost style */
 .leave-btn {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
@@ -274,18 +388,24 @@ h2 {
   background: rgba(239, 68, 68, 0.2);
   color: white;
 }
+
+/* Screen share button — same ghost style as leave */
 .screen-btn {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #fca5a5;
   display: none;
+  margin-right: 10px;
 }
 .screen-btn:hover {
   background: rgba(239, 68, 68, 0.2);
   color: white;
 }
 
-/* --- ANIMATIONS & INDICATORS --- */
+/* ============================================================
+   ANIMATIONS & SPEAKING INDICATOR
+   Neon green pulse on the avatar of whoever is speaking
+   ============================================================ */
 @keyframes neonPulse {
   0% {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
@@ -301,15 +421,16 @@ h2 {
   }
 }
 
-/* --- INDIKACIJA ZVUKA --- */
+/* Applied to a user card while they are speaking */
 .speaking {
   animation: neonPulse 1.5s infinite !important;
   transform: scale(1.05);
   background: rgba(16, 185, 129, 0.2) !important;
   border: 2px solid #10b981 !important;
-  z-index: 2; 
+  z-index: 2;
 }
 
+/* Slide-in entrance animation used by header and chat */
 @keyframes slideDown {
   from {
     transform: translateY(-50px);
@@ -321,7 +442,10 @@ h2 {
   }
 }
 
-/* Volume slider styles */
+/* ============================================================
+   VOLUME CONTROLS
+   Collapsible slider that appears below an active user card
+   ============================================================ */
 .volume-controls {
   height: 0;
   overflow: hidden;
@@ -332,6 +456,8 @@ h2 {
   align-items: center;
   opacity: 0;
 }
+
+/* Expand slider when card is in active state */
 .user-card.active .volume-controls {
   height: 30px;
   margin-top: 8px;
@@ -346,6 +472,8 @@ h2 {
   outline: none;
   -webkit-appearance: none;
 }
+
+/* Custom thumb for WebKit browsers */
 .volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -357,7 +485,10 @@ h2 {
   box-shadow: 0 0 10px white;
 }
 
-/* --- OSNOVNI VIDEO --- */
+/* ============================================================
+   VIDEO CONTAINER
+   Overlays a live video feed on top of a user's avatar
+   ============================================================ */
 .video-container {
   position: absolute;
   top: 0;
@@ -378,17 +509,17 @@ h2 {
   object-fit: cover !important;
 }
 
-/* --- FULLSCREEN (CEO EKRAN) --- */
-/* Standardni pregledači */
+/* ============================================================
+   FULLSCREEN VIDEO (cross-browser)
+   Removes border-radius and switches to contain when fullscreen
+   ============================================================ */
 .video-container:fullscreen {
   border-radius: 0 !important;
   background: #000 !important;
 }
 .video-container:fullscreen video {
-  object-fit: contain !important; 
+  object-fit: contain !important;
 }
-
-/* Chrome, Safari, Edge, Opera */
 .video-container:-webkit-full-screen {
   border-radius: 0 !important;
   background: #000 !important;
@@ -396,14 +527,668 @@ h2 {
   height: 100vh !important;
 }
 .video-container:-webkit-full-screen video {
-  object-fit: contain !important; 
+  object-fit: contain !important;
 }
-
-/* Firefox */
 .video-container:-moz-full-screen {
   border-radius: 0 !important;
   background: #000 !important;
 }
 .video-container:-moz-full-screen video {
-  object-fit: contain !important; 
+  object-fit: contain !important;
+}
+
+/* ============================================================
+   CHAT BOX
+   Fixed glassmorphism panel on the right side (desktop)
+   ============================================================ */
+#chat-container {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  width: 580px;
+  height: 750px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(3px);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  z-index: 999;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  animation: slideDown 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Drag handle — non-selectable for cleaner UX */
+#chat-header {
+  user-select: none;
+}
+
+/* Scrollable message feed */
+#chat-messages {
+  flex-grow: 1;
+  padding: 15px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.85rem;
+  animation: slideDown 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* System-generated event messages (e.g. "Petar has joined") */
+.system-msg {
+  text-align: center;
+  color: #94a3b8;
+  font-style: italic;
+  font-size: 0.75rem;
+  margin: 5px 0;
+}
+
+/* Individual chat message bubble */
+.chat-msg {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 12px;
+  border-radius: 12px;
+  width: fit-content;
+  max-width: 85%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  transition: background 0.2s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-msg:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chat-msg > a {
+  color: var(--accent-color) !important;
+}
+
+/* Sender name label inside the message bubble */
+.chat-msg b {
+  color: var(--secondary);
+  display: block;
+  font-size: 0.7rem;
+  margin-bottom: 2px;
+}
+
+/* Bottom row containing the text input and action buttons */
+.chat-input-wrapper {
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  gap: 5px;
+}
+
+#chat-input {
+  flex-grow: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 8px;
+  color: white;
+  outline: none;
+}
+
+/* Timestamp shown alongside each message */
+.chat-time {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-right: 8px;
+  font-family: monospace;
+  vertical-align: middle;
+}
+
+/* Send button */
+#send-btn {
+  background: var(--primary);
+  border: none;
+  border-radius: 10px;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+#send-btn:hover {
+  transform: scale(1.05);
+}
+
+/* Unread message badge on collapsed chat header */
+#unread-badge {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  font-size: 0.7rem;
+  font-weight: bold;
+  border-radius: 20px;
+  min-width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.2);
+}
+
+/* ============================================================
+   MOBILE CHAT OVERRIDES (max-width: 767px)
+   Chat fills the space between header and controls
+   ============================================================ */
+@media (max-width: 767px) {
+  #chat-container {
+    position: fixed !important;
+    top: 100px !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: 80px !important;
+    width: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    z-index: 999 !important;
+  }
+
+  .chat-input-wrapper {
+    padding: 10px !important;
+  }
+
+  /* Prevent iOS auto-zoom on input focus */
+  #chat-input {
+    font-size: 16px !important;
+  }
+}
+
+/* ============================================================
+   AUTOCOMPLETE MENU
+   Command suggestions shown above the chat input
+   ============================================================ */
+#autocomplete-menu {
+  position: absolute;
+  bottom: 60px;
+  left: 10px;
+  right: 10px;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 5px;
+  z-index: 1000;
+  box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.autocomplete-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  transition: 0.2s;
+  display: flex;
+  justify-content: space-between;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.selected {
+  background: var(--primary);
+  color: white;
+}
+
+/* Secondary label showing what a command does */
+.command-desc {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+/* Drag-over state for file drop into chat input */
+#chat-input.drag-active {
+  background: rgba(74, 222, 128, 0.1) !important;
+  border: 2px dashed #4ade80 !important;
+}
+
+/* ============================================================
+   EMOJI PICKER
+   ============================================================ */
+
+/* Toggle button inside the input row */
+#emoji-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 5px;
+  transition: transform 0.2s;
+}
+
+#emoji-btn:hover {
+  transform: scale(1.2);
+}
+
+/* Floating emoji grid above the input */
+#emoji-picker {
+  position: absolute;
+  bottom: 60px;
+  right: 0;
+  width: 180px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 15px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  z-index: 1000;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+#emoji-picker span {
+  font-size: 1.4rem;
+  cursor: pointer;
+  text-align: center;
+  padding: 5px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+#emoji-picker span:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Utility class to hide any element */
+.hidden {
+  display: none !important;
+}
+
+/* ============================================================
+   POLL BUTTONS
+   Voting options displayed inside a chat message
+   ============================================================ */
+.poll-btn {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid var(--glass-border);
+  color: white;
+  padding: 10px 15px;
+  margin: 5px 0;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  transition: all 0.2s;
+  font-family: "Outfit", sans-serif;
+}
+
+.poll-btn:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: var(--primary);
+}
+
+/* Vote count badge on poll option */
+.opt-count {
+  background: var(--primary);
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+/* Drag handle icon in the chat header */
+#chat-drag-handle {
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+#chat-drag-handle:hover {
+  opacity: 1;
+  color: #4ade80;
+}
+
+/* ============================================================
+   MEDIA CARDS
+   Rich-preview cards for images, video, audio, docs, and links
+   ============================================================ */
+.media-card {
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+  max-width: 100%;
+  transition: border-color 0.2s;
+}
+.media-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+/* --- Image preview --- */
+.media-img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  display: block;
+  cursor: zoom-in;
+  border-radius: 14px 14px 0 0;
+}
+
+/* --- Video preview --- */
+.media-video {
+  width: 100%;
+  max-height: 240px;
+  display: block;
+  background: #000;
+  border-radius: 14px 14px 0 0;
+}
+
+/* Source link shown below image/video previews */
+.media-link {
+  display: block;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  color: #818cf8;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.media-link:hover {
+  color: #a5b4fc;
+}
+
+/* --- Audio card layout --- */
+.media-card--audio {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+.media-audio-icon {
+  font-size: 1.8rem;
+}
+.media-audio-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.media-audio-name {
+  font-size: 0.8rem;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-audio {
+  width: 100%;
+  height: 32px;
+  accent-color: #6366f1;
+}
+
+/* --- Document card layout --- */
+.media-card--doc {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.media-doc-icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+}
+.media-doc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.media-doc-name {
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* File extension label (e.g. PDF, DOCX) */
+.media-doc-ext {
+  font-size: 0.7rem;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+/* Download button on doc card */
+.media-doc-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: opacity 0.2s;
+}
+.media-doc-btn:hover {
+  opacity: 0.85;
+}
+
+/* --- YouTube embed card --- */
+.media-card--yt {
+  padding-bottom: 0;
+  width: 320px;
+  max-width: 100%;
+}
+/* 16:9 responsive wrapper */
+.media-yt-wrap {
+  position: relative;
+  padding-bottom: 56.25%;
+  height: 0;
+}
+.media-yt {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 14px 14px 0 0;
+}
+
+/* --- Spotify embed card --- */
+.media-card--spotify {
+  padding: 8px;
+}
+.media-spotify {
+  border-radius: 10px;
+  display: block;
+}
+
+/* --- Plain URL link (no rich preview) --- */
+.media-link-plain {
+  color: #818cf8;
+  text-decoration: none;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+.media-link-plain:hover {
+  color: #a5b4fc;
+  text-decoration: underline;
+}
+
+/* ============================================================
+   DESKTOP COLLAPSED CHAT STATE (min-width: 768px)
+   Shrinks chat to header-only when collapsed
+   ============================================================ */
+@media (min-width: 768px) {
+  #chat-container.collapsed #chat-messages,
+  #chat-container.collapsed .chat-input-wrapper {
+    display: none !important;
+  }
+  #chat-container.collapsed {
+    height: auto !important;
+  }
+}
+
+/* ============================================================
+   LOADING SKELETON
+   Shimmer placeholders while chat history is loading
+   ============================================================ */
+.chat-loading-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 15px;
+  width: 100%;
+}
+
+.skeleton-bubble {
+  height: 40px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+}
+
+/* Width variants to simulate messages of different lengths */
+.skeleton-bubble.short {
+  width: 40%;
+}
+.skeleton-bubble.med {
+  width: 70%;
+}
+.skeleton-bubble.long {
+  width: 85%;
+}
+
+/* Left-to-right shimmer sweep */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ============================================================
+   UPLOAD BUTTON
+   File attachment button inside the chat input row
+   ============================================================ */
+#upload-btn {
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+#upload-btn:active {
+  transform: scale(0.9);
+  color: var(--primary);
+}
+
+/* Extra spacing for upload/emoji buttons on mobile */
+@media (max-width: 767px) {
+  .chat-input-wrapper {
+    gap: 4px !important;
+    padding: 8px !important;
+  }
+    #upload-btn {
+    font-size: 1rem !important;
+    padding: 4px !important;
+  }
+
+  #emoji-btn {
+    font-size: 1rem !important;
+    padding: 4px !important;
+  }
+
+  #send-btn {
+    padding: 0 8px !important;
+    font-size: 0.9rem !important;
+  }
+
+  #chat-input {
+  font-size: 16px !important; /* keep 16px to prevent iOS zoom */
+  padding: 6px !important;
+  min-width: 150px !important; /* allows input to shrink below its default min size */
+  }
+}
+
+/* ============================================================
+   SETTINGS MENU
+   Dropdown panel triggered from the chat header
+   ============================================================ */
+.header-actions {
+  position: relative;
+}
+
+/* Gear/settings icon button */
+#settings-btn {
+  background: none;
+  border: none;
+  opacity: 0.6;
+  cursor: pointer;
+  color: #4ade80;
+  padding-top: 4px;
+  margin-left: 10px;
+  font-size: 18px;
+}
+
+/* Dropdown panel */
+#settings-menu {
+  position: absolute;
+  top: 45px;
+  right: -42px;
+  background: #1a1a1a;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 0px 0px 12px 12px;
+  padding: 15px;
+  z-index: 1000;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  min-width: 180px;
+}
+
+/* Settings panel heading */
+#settings-menu h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  background: linear-gradient(135deg, #a5b4fc, #f0abfc);
+  background-clip: border-box;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+#settings-menu label {
+  font-size: 11px;
+  display: block;
+  margin-bottom: 5px;
+}
+
+#settings-menu select {
+  width: 100%;
+  background: #2a2a2a;
+  color: white;
+  border: 1px solid #444;
+  padding: 5px;
+  border-radius: 4px;
+}
+
+/* Upload expiry selector — pointer cursor for clarity */
+#upload-expiry {
+  cursor: pointer;
 }

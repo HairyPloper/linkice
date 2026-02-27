@@ -2,24 +2,39 @@
 <html lang="sr">
   <head>
     <meta charset="UTF-8" />
+    <!-- Prevent user scaling on mobile for a native-app feel -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>Linkice</title>
+
+    <!-- Google Fonts: Outfit (light, medium, bold weights) -->
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap"
       rel="stylesheet"
     />
-    <link
+
+    <!-- Inline SVG favicon (loop emoji) -->
+    <!-- <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔗</text></svg>"
-    />
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>➰</text></svg>"
+    /> -->
+    <link rel="icon" type="image/png" href="favicon-v1.png">
+
+    <!-- Agora RTC SDK for real-time audio/video communication -->
     <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.11.0.js"></script>
-    <script src="https://download.agora.io/sdk/release/agora-rtm-sdk-1.5.1.js"></script>
+
+    <!-- Main stylesheet -->
     <link rel="stylesheet" href="css/style.css" />
   </head>
+
   <body>
+
+    <!-- ============================================================
+         VIDEO BACKGROUND
+         Looping ambient video with a dark overlay for contrast
+         ============================================================ -->
     <div class="video-background">
       <div class="video-overlay"></div>
       <video loop muted playsinline preload="auto" id="bgVideo">
@@ -29,36 +44,18 @@
         />
       </video>
     </div>
+
+    <!-- Background music (hidden, toggled via #audioToggle button) -->
     <audio loop id="myAudio">
       <source src="src/nemoj.mp3" type="audio/mpeg" />
     </audio>
 
-    <button
-      id="audioToggle"
-      class="video-toggle"
-      title="Muzika"
-      style="bottom: 60px"
-    >
-      🎵
-    </button>
-    <button
-      id="videoToggle"
-      class="video-toggle"
-      title="Uključi/Isključi video"
-    >
-      🎬
-    </button>
-    <button
-      id="snowToggle"
-      class="video-toggle"
-      title="Uključi/Isključi pahuljicu"
-      style="bottom: 100px;"
-    >
-      ❄️
-    </button>
-
+    <!-- ============================================================
+         HEADER
+         App title and live connection status message
+         ============================================================ -->
     <div class="header">
-      <h2>LINKICE 🔗</h2>
+      <h2>L I N K I C E</h2>
       <div
         id="status"
         style="
@@ -67,23 +64,250 @@
           color: #cbd5e1;
           font-weight: 300;
         "
-      >
-        Spremno
-      </div>
+      ></div>
     </div>
 
+    <!-- ============================================================
+         USER GRID
+         Participant cards are injected here dynamically via JS
+         ============================================================ -->
     <div id="user-grid"></div>
 
+    <!-- ============================================================
+         CONTROLS BAR
+         Join / screen share / leave action buttons
+         ============================================================ -->
     <div class="controls">
       <button id="join-btn" class="btn join-btn"><span>🚀</span> Upadni</button>
+
+      <!-- Screen share — hidden until the user joins -->
       <button id="screen-btn" class="btn screen-btn" style="display: none">
         <span>🖥️</span> Podeli ekran
       </button>
-      <button id="leave-btn" class="btn leave-btn">
-        <span>👋</span> Ćaoo drugaryy
+
+      <!-- Leave — hidden until the user joins -->
+      <button id="leave-btn" class="btn leave-btn" style="display: none">
+        <span>👋</span>Izađi
       </button>
     </div>
 
+    <!-- ============================================================
+         CHAT PANEL
+         Draggable glassmorphism chat box with input, emoji picker,
+         autocomplete, file upload, and settings
+         ============================================================ -->
+    <div id="chat-container">
+
+      <!-- Chat header: toggle buttons, settings, drag handle -->
+      <div
+        id="chat-header"
+        style="
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          padding: 10px;
+          background: var(--glass-bg);
+          border: 1px solid var(--glass-border);
+          border-radius: 12px 12px 0 0;
+        "
+      >
+        <span id="unread-badge" class="hidden">0</span>
+        <!-- Toggle background music on/off -->
+        <button
+          id="audioToggle"
+          class="video-toggle"
+          title="Muzika"
+          style="bottom: 60px"
+        >
+          🎵
+        </button>
+
+        <!-- Toggle video background on/off -->
+        <button
+          id="videoToggle"
+          class="video-toggle"
+          title="Uključi/Isključi video"
+        >
+          🎬
+        </button>
+
+        <!-- Toggle snow/particle effect (mobile only, hidden via CSS on desktop) -->
+        <button
+          id="snowToggle"
+          class="video-toggle snow-toggle"
+          title="Uključi/Isključi pahuljicu"
+          style="top: 8px; right: 50px"
+        >
+          ❄️
+        </button>
+
+        <!-- Settings dropdown (file upload expiry) -->
+        <div class="header-actions">
+          <button id="settings-btn" title="Postavke">
+            <!-- Gear icon (SVG) -->
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+              ></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+
+          <!-- Settings panel (toggled via JS, hidden by default) -->
+          <div id="settings-menu" class="hidden">
+            <h4>Postavke</h4>
+            <!-- How long uploaded files should be kept on the server -->
+            <label for="upload-expiry">Čuvaj fajl:</label>
+            <select id="upload-expiry">
+              <option value="trajno">Trajno (Catbox)</option>
+              <option value="1h">1 Sat</option>
+              <option value="24h" selected>24 Sata</option>
+              <option value="72h">72 Sata</option>
+            </select>
+          </div>
+        </div>
+        <!-- Drag handle — lets users reposition the chat panel -->
+        <div
+          id="chat-drag-handle"
+          style="cursor: grab; padding: 5px; color: #4ade80; display: flex"
+        >
+          <!-- Six-dot grid icon (SVG) -->
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="9" cy="5" r="1"></circle>
+            <circle cx="9" cy="12" r="1"></circle>
+            <circle cx="9" cy="19" r="1"></circle>
+            <circle cx="15" cy="5" r="1"></circle>
+            <circle cx="15" cy="12" r="1"></circle>
+            <circle cx="15" cy="19" r="1"></circle>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Scrollable message feed (populated dynamically by chat.js) -->
+      <div id="chat-messages"></div>
+
+      <!-- Slash-command autocomplete menu (shown/hidden by chat.js) -->
+      <div id="autocomplete-menu" style="display: none"></div>
+
+      <!-- ============================================================
+           CHAT INPUT ROW
+           File upload, text input, emoji picker, and send button
+           ============================================================ -->
+      <div class="chat-input-wrapper">
+
+        <!-- File attachment trigger button -->
+        <button
+          id="upload-btn"
+          type="button"
+          style="
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 5px;
+          "
+        >
+          ➕
+        </button>
+
+        <!-- Hidden file input — triggered programmatically by #upload-btn -->
+        <input type="file" id="file-input" style="display: none" multiple />
+
+        <!-- Main text input (supports slash commands and @mentions) -->
+        <input
+          type="text"
+          id="chat-input"
+          placeholder="Tekst..."
+          autocomplete="off"
+        />
+
+        <!-- Emoji picker toggle + floating picker grid -->
+        <div class="emoji-wrapper">
+          <button id="emoji-btn" type="button" class="chat-action-btn">
+            😀
+          </button>
+          <!-- Emoji picker panel (hidden by default, toggled via JS) -->
+          <div id="emoji-picker" class="hidden">
+            <span onclick="addEmoji('😀')">😀</span>
+            <span onclick="addEmoji('🤣')">🤣</span>
+            <span onclick="addEmoji('🔥')">🔥</span>
+            <span onclick="addEmoji('👍')">👍</span>
+            <span onclick="addEmoji('❤️')">❤️</span>
+            <span onclick="addEmoji('🇵🇰')">🇵🇰</span>
+            <span onclick="addEmoji('🛌🏽')">🛌🏽</span>
+            <span onclick="addEmoji('👨‍🦽‍➡️')">👨‍🦽‍➡️</span>
+            <span onclick="addEmoji('💩')">💩</span>
+          </div>
+        </div>
+
+        <!-- Send message button -->
+        <button id="send-btn">💬</button>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         FIREBASE SDKs
+         App, Auth, and Realtime Database (compat v9 build)
+         ============================================================ -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <script>
+      // Firebase project config + app init
+      const firebaseConfig = {
+        apiKey: "AIzaSyAGtDjLnt2t_fMsIZJkGcH-Az-JhoXePD0",
+        databaseURL:
+          "https://voice-room-web-default-rtdb.europe-west1.firebasedatabase.app",
+      };
+      firebase.initializeApp(firebaseConfig);
+
+      // Global channel name used by Agora and Firebase
+      window.CHANNEL = "Linkice";
+
+      // Slash-command definitions consumed by the autocomplete menu
+      window.commands = [
+        { cmd: "/clear", desc: "Očisti čet" },
+        { cmd: "/nick",  desc: "Promeni ime /nick {ime}" },
+        { cmd: "/roll",  desc: "Baci kockicu /roll {num}" },
+        { cmd: "/ping",  desc: "Ping test Agora" },
+        { cmd: "/msg",   desc: "Privatna poruka /msg {ime} {poruka}" },
+        {
+          cmd: "/poll",
+          desc: "Kreiraj anketu /poll {pitanje}, {opcija 1}, {opcija 2} ...",
+        },
+        { cmd: "/bot",   desc: "Postavi pitanje botu /bot {pitanje}" },
+        { cmd: "/help",  desc: "Pomoć" },
+      ];
+    </script>
+
+    <!-- ============================================================
+         APPLICATION SCRIPTS
+         Load order matters: main → utils → ui → rtc → chat
+         ============================================================ -->
     <script src="js/main.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/rtc.js"></script>
+    <script src="js/chat.js"></script>
+
   </body>
 </html>
