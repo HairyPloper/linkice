@@ -415,7 +415,12 @@ window.removeVideoFromCard = (uid) => {
   // ---- Draw loop ----
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+    
+    // Pause loop when nothing to draw — resume via restartSnow
+    if (particles.length === 0 && !window.isSnowing) {
+      setTimeout(() => requestAnimationFrame(draw), 1000);
+      return;
+    }
     // Iterate backwards so splicing doesn't skip items
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -586,6 +591,7 @@ window.client.on("user-published", async (user, mediaType) => {
  * Plays a low tone, posts a system message, and removes the user's card.
  */
 window.client.on("user-left", (user) => {
+  delete window.uidNameMap[user.uid];
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${window.getDisplayName(user.uid)}** je otišao.`, "#ffcc00");
@@ -675,7 +681,11 @@ if (joinBtn) joinBtn.onclick = async () => {
     firebase.database()
       .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
       .set({ displayName: window.myDisplayName, icon: window.myIcon });
-
+    // Auto-remove presence if connection drops unexpectedly
+    firebase.database()
+      .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
+      .onDisconnect().remove();
+      
     if (window.appendMessage)
       window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#ffcc00");
 
@@ -740,6 +750,9 @@ async function leaveChannel() {
 
   // --- 5. RESET LOCAL STATE ---
   isMuted = false;
+
+  // --- removes stale entries
+  window.uidNameMap = {};
 
   // --- 6. USER GRID ---
   const grid = document.getElementById("user-grid");
@@ -1165,11 +1178,12 @@ function handleCommand(text) {
         localStorage.setItem("savedUsername", newNick);
 
         // Update presence so other users see the new name immediately
-        if (window.client?.uid) {
-          firebase.database()
-            .ref(`presence/${window.CHANNEL}/${window.client.uid}/displayName`)
-            .set(newNick);
-        }
+        //TODO: nobody is listening with on() so it does nothing
+        // if (window.client?.uid) {
+        //   firebase.database()
+        //     .ref(`presence/${window.CHANNEL}/${window.client.uid}/displayName`)
+        //     .set(newNick);
+        // }
 
         // Update own card in the grid
         const nameEl = document.querySelector(`#user-${window.client?.uid} .username`);
@@ -1328,7 +1342,7 @@ function startChat() {
 window.vote = (pollId, option) => {
   const votedKey = `voted_${pollId}`;
   if (localStorage.getItem(votedKey)) {
-    alert("Već glasao");
+    window.appendMessage("Sistem", "Već si glasao u ovoj anketi.", "#ef4444");
     return;
   }
 
