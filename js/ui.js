@@ -73,13 +73,30 @@ if (snowToggle) {
 // ============================================================
 // USER CARD RENDERER
 // Builds and inserts a participant card into #user-grid.
-// Skips creation if a card for this uid already exists.
+// FIX: if a card already exists for this uid, update the name label
+// instead of silently returning — this handles the case where the card
+// was created with a raw numeric UID before the Firebase lookup completed.
 // ============================================================
 window.drawUser = (uid, username, icon, isMe = false) => {
-  if (document.getElementById(`user-${uid}`)) return; // Guard: no duplicate cards
+  const existing = document.getElementById(`user-${uid}`);
+  if (existing) {
+    // Card already exists — just patch the name label and bail out.
+    // This covers the race where user-published fires before user-joined's
+    // Firebase callback populates uidNameMap with the real display name.
+    const nameEl = existing.querySelector(".username");
+    if (nameEl) {
+      const safeUsername = window.escapeHtml ? window.escapeHtml(username) : username;
+      // Only overwrite if the current text looks like a raw number (the fallback)
+    const currentText = nameEl.textContent.replace(" (Ti)", "").trim();
+    if (currentText !== username) {
+      nameEl.textContent = `${safeUsername}${isMe ? " (Ti)" : ""}`;
+    }
+    }
+    return;
+  }
 
   // Local user keeps their pre-assigned icon; remote users get a random animal
-const displayIcon = icon || window.animals[Math.floor(Math.random() * window.animals.length)];
+  const displayIcon = icon || window.animals[Math.floor(Math.random() * window.animals.length)];
 
   const grid = document.getElementById("user-grid");
   if (!grid) return;
