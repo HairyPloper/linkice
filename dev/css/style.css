@@ -660,6 +660,23 @@ h2 {
   transform: scale(1.05);
 }
 
+/* Unread message badge on collapsed chat header */
+#unread-badge {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  font-size: 0.7rem;
+  font-weight: bold;
+  border-radius: 20px;
+  min-width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.2);
+}
+
 /* ============================================================
    MOBILE CHAT OVERRIDES (max-width: 767px)
    Chat fills the space between header and controls

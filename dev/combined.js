@@ -896,6 +896,15 @@ window.appendMessage = (
   }
 
   chatMessages.appendChild(msgDiv);
+  // Increment unread badge if chat is collapsed
+  if (chatContainer.classList.contains("collapsed") && name !== "Sistem" && !isMe) {
+    const badge = document.getElementById("unread-badge");
+    if (badge) {
+      const current = parseInt(badge.innerText) || 0;
+      badge.innerText = current + 1;
+      badge.classList.remove("hidden");
+    }
+  }
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
   // Second scroll after a short delay to account for late-rendering media
@@ -1558,6 +1567,15 @@ if (chatContainer && dragHandle) {
     if (!isDragging) {
       chatContainer.classList.toggle("collapsed");
       settingsBtn.classList.toggle("hidden");
+
+      // Clear badge when opening chat
+      if (!chatContainer.classList.contains("collapsed")) {
+        const badge = document.getElementById("unread-badge");
+        if (badge) {
+          badge.innerText = "0";
+          badge.classList.add("hidden");
+        }
+      }
     }
   };
 }
