@@ -54,20 +54,7 @@ window.animals = [
 ];
 
 // Pick one animal at random for this session
-window.myIcon = window.animals[Math.floor(Math.random() * window.animals.length)];
-
-// Fix for mobile browsers that don't automatically resize the viewport height when the keyboard opens,
-// causing 100vh elements to be too tall and create unwanted scrolling.
-// Listens for viewport changes and updates body height to match the new visual viewport height.
-if (window.visualViewport) {
-  const handleViewport = () => {
-    document.body.style.height = `${window.visualViewport.height}px`;
-  };
-
-  window.visualViewport.addEventListener("resize", handleViewport);
-  window.visualViewport.addEventListener("scroll", handleViewport);
-  handleViewport(); // Set correct height on load
-}/**
+window.myIcon = window.animals[Math.floor(Math.random() * window.animals.length)];/**
  * js/utils.js
  * Shared utility functions used across the app.
  * All functions are attached to `window` so every script can access them.
