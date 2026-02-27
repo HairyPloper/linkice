@@ -1,3 +1,7 @@
+/* ============================================================
+   CUSTOM PROPERTIES (CSS VARIABLES)
+   Global design tokens for colors, backgrounds, and borders
+   ============================================================ */
 :root {
   --primary: #6366f1;
   --secondary: #a855f7;
@@ -8,6 +12,10 @@
   --danger: #ef4444;
 }
 
+/* ============================================================
+   BASE BODY STYLES
+   Full-viewport centered layout with dark radial background
+   ============================================================ */
 body {
   font-family: "Outfit", sans-serif;
   background: radial-gradient(
@@ -25,7 +33,11 @@ body {
   overflow: hidden;
 }
 
-/* --- AUDIO TOGGLE BUTTON --- */
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+
+/* --- AUDIO TOGGLE — active/playing state --- */
 #audioToggle.playing {
   color: #ec4899;
   background: rgba(236, 72, 153, 0.15);
@@ -33,43 +45,8 @@ body {
   box-shadow: 0 0 15px rgba(236, 72, 153, 0.2);
 }
 
-/* --- VIDEO BACKGROUND --- */
-.video-background {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100dvh;
-  z-index: -2;
-  overflow: hidden;
-}
-.video-background video {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 100%;
-  min-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: cover;
-}
-.video-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(3, 7, 18, 0.5); /* Darker tint for contrast */
-  backdrop-filter: blur(2px);
-  z-index: -1;
-}
-
 /* --- VIDEO TOGGLE BUTTON --- */
 .video-toggle {
-  /* position: fixed; */
-  /* bottom: 15px; */
-  /* right: 15px; */
   width: 30px;
   margin-left: 10px;
   height: 30px;
@@ -89,21 +66,68 @@ body {
   color: white;
 }
 
-/* --- MOBILE OVERRIDES --- */
+/* ============================================================
+   VIDEO BACKGROUND
+   Full-viewport fixed video layer behind all content
+   ============================================================ */
+.video-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: -2;
+  overflow: hidden;
+}
+
+/* Centers and scales the video to cover the viewport */
+.video-background video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 100%;
+  min-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: cover;
+}
+
+/* Semi-transparent overlay to improve text contrast over video */
+.video-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(3, 7, 18, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: -1;
+}
+
+/* ============================================================
+   MOBILE OVERRIDES (max-width: 767px)
+   Hides video, repositions chat and controls for small screens
+   ============================================================ */
 @media (max-width: 767px) {
+  /* Hide video background and toggle on mobile */
   .video-background,
   .video-toggle {
     display: none !important;
   }
+
+  /* Show snow toggle instead */
   .snow-toggle {
     display: block !important;
   }
-  /* Hide screen share button on mobile to prevent UI clutter */
+
+  /* Hide screen share button to prevent UI clutter on mobile */
   .screen-btn,
   #screen-btn {
     display: none !important;
   }
-  /* Fullscreen chat between header and controls */
+
+  /* Fullscreen chat positioned between header and controls */
   #chat-container {
     position: fixed !important;
     top: 120px !important;
@@ -111,12 +135,11 @@ body {
     right: 10px !important;
     bottom: auto !important;
     width: auto !important;
-    height: calc(
-      100dvh - 240px
-    ) !important; /* Use dynamic viewport height for better mobile compatibility */
+    height: calc(100dvh - 240px) !important;
     z-index: 999 !important;
   }
-  /* Collapsed state for mobile chat */
+
+  /* Collapsed chat: hide messages and input */
   #chat-container.collapsed #chat-messages,
   #chat-container.collapsed .chat-input-wrapper {
     display: none !important;
@@ -124,18 +147,18 @@ body {
   #chat-container.collapsed {
     height: 50px !important;
   }
+
+  /* Deep rich gradient for mobile background */
   body {
-    /* Deep rich gradient for mobile */
     background: radial-gradient(
       circle at center,
       #2e1065,
       #020617 80%
     ) !important;
-    padding-bottom: env(
-      safe-area-inset-bottom,
-      20px
-    ) !important; /* Add padding for mobile navigation bars */
+    padding-bottom: env(safe-area-inset-bottom, 20px) !important;
   }
+
+  /* Stick controls to bottom center on mobile */
   .controls {
     position: fixed !important;
     bottom: env(safe-area-inset-bottom, 10px) !important;
@@ -146,7 +169,10 @@ body {
   }
 }
 
-/* --- HEADER --- */
+/* ============================================================
+   HEADER
+   Glassmorphism pill at the top with animated entrance
+   ============================================================ */
 .header {
   margin-top: calc(env(safe-area-inset-top, 0px) + 10px);
   flex-shrink: 0;
@@ -163,6 +189,7 @@ body {
   animation: slideDown 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* Gradient title text */
 h2 {
   margin: 0;
   font-weight: lighter;
@@ -173,7 +200,10 @@ h2 {
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
-/* --- LIFELINE ANIMATION --- */
+/* ============================================================
+   LIFELINE ANIMATION
+   SVG ECG-style line drawn across the header via clip-path
+   ============================================================ */
 .header::before {
   content: "";
   position: absolute;
@@ -192,6 +222,7 @@ h2 {
   animation: drawLifeLine 3.5s infinite ease-out 1s;
 }
 
+/* Reveals the lifeline SVG from left to right */
 @keyframes drawLifeLine {
   0% {
     clip-path: inset(0 100% 0 0);
@@ -201,7 +232,10 @@ h2 {
   }
 }
 
-/* --- GRID --- */
+/* ============================================================
+   USER GRID
+   Centered wrapping layout for user cards
+   ============================================================ */
 #user-grid {
   display: flex;
   flex-wrap: wrap;
@@ -212,14 +246,19 @@ h2 {
   padding: 40px 20px;
   flex-grow: 1;
   overflow-y: auto;
-  align-content: center; /* Center vertically */
+  align-content: center;
 }
+
+/* Disabled button state */
 .btn:disabled {
   cursor: not-allowed;
   filter: grayscale(0.5);
 }
 
-/* --- USER CARDS --- */
+/* ============================================================
+   USER CARDS
+   Individual participant tiles with hover/active states
+   ============================================================ */
 .user-card {
   display: flex;
   flex-direction: column;
@@ -246,7 +285,10 @@ h2 {
   transform: scale(0.95);
 }
 
-/* --- KONTEJNER --- */
+/* ============================================================
+   AVATAR
+   Square-rounded icon container for each participant
+   ============================================================ */
 .avatar-container {
   position: relative;
   width: 70px;
@@ -256,7 +298,6 @@ h2 {
   justify-content: center;
 }
 
-/* --- VRAĆEN STARI AVATAR --- */
 .avatar {
   width: 70px;
   height: 70px;
@@ -277,6 +318,7 @@ h2 {
   z-index: 1;
 }
 
+/* Muted participant — desaturated and faded */
 .avatar.muted {
   opacity: 0.5;
   filter: grayscale(1);
@@ -291,20 +333,24 @@ h2 {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-/* --- CONTROLS --- */
+/* ============================================================
+   CONTROLS BAR
+   Floating pill of action buttons at the bottom
+   ============================================================ */
 .controls {
   width: auto;
   margin-bottom: 50px;
   padding: 10px;
   display: flex;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.3); /* Transparent pill */
+  background: rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(15px);
   border-radius: 60px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
 }
 
+/* Base button style shared across all control buttons */
 .btn {
   padding: 14px 32px;
   border-radius: 50px;
@@ -321,6 +367,7 @@ h2 {
   gap: 8px;
 }
 
+/* Join button — primary indigo/violet gradient */
 .join-btn {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
@@ -330,6 +377,7 @@ h2 {
   box-shadow: 0 0 30px rgba(99, 102, 241, 0.6);
 }
 
+/* Leave button — subtle red-tinted ghost style */
 .leave-btn {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
@@ -341,6 +389,8 @@ h2 {
   background: rgba(239, 68, 68, 0.2);
   color: white;
 }
+
+/* Screen share button — same ghost style as leave */
 .screen-btn {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
@@ -352,7 +402,10 @@ h2 {
   color: white;
 }
 
-/* --- ANIMATIONS & INDICATORS --- */
+/* ============================================================
+   ANIMATIONS & SPEAKING INDICATOR
+   Neon green pulse on the avatar of whoever is speaking
+   ============================================================ */
 @keyframes neonPulse {
   0% {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
@@ -368,7 +421,7 @@ h2 {
   }
 }
 
-/* --- INDIKACIJA ZVUKA --- */
+/* Applied to a user card while they are speaking */
 .speaking {
   animation: neonPulse 1.5s infinite !important;
   transform: scale(1.05);
@@ -377,6 +430,7 @@ h2 {
   z-index: 2;
 }
 
+/* Slide-in entrance animation used by header and chat */
 @keyframes slideDown {
   from {
     transform: translateY(-50px);
@@ -388,7 +442,10 @@ h2 {
   }
 }
 
-/* Volume slider styles */
+/* ============================================================
+   VOLUME CONTROLS
+   Collapsible slider that appears below an active user card
+   ============================================================ */
 .volume-controls {
   height: 0;
   overflow: hidden;
@@ -399,6 +456,8 @@ h2 {
   align-items: center;
   opacity: 0;
 }
+
+/* Expand slider when card is in active state */
 .user-card.active .volume-controls {
   height: 30px;
   margin-top: 8px;
@@ -413,6 +472,8 @@ h2 {
   outline: none;
   -webkit-appearance: none;
 }
+
+/* Custom thumb for WebKit browsers */
 .volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -424,7 +485,10 @@ h2 {
   box-shadow: 0 0 10px white;
 }
 
-/* --- OSNOVNI VIDEO --- */
+/* ============================================================
+   VIDEO CONTAINER
+   Overlays a live video feed on top of a user's avatar
+   ============================================================ */
 .video-container {
   position: absolute;
   top: 0;
@@ -445,8 +509,10 @@ h2 {
   object-fit: cover !important;
 }
 
-/* --- FULLSCREEN (CEO EKRAN) --- */
-/* Standardni pregledači */
+/* ============================================================
+   FULLSCREEN VIDEO (cross-browser)
+   Removes border-radius and switches to contain when fullscreen
+   ============================================================ */
 .video-container:fullscreen {
   border-radius: 0 !important;
   background: #000 !important;
@@ -454,8 +520,6 @@ h2 {
 .video-container:fullscreen video {
   object-fit: contain !important;
 }
-
-/* Chrome, Safari, Edge, Opera */
 .video-container:-webkit-full-screen {
   border-radius: 0 !important;
   background: #000 !important;
@@ -465,8 +529,6 @@ h2 {
 .video-container:-webkit-full-screen video {
   object-fit: contain !important;
 }
-
-/* Firefox */
 .video-container:-moz-full-screen {
   border-radius: 0 !important;
   background: #000 !important;
@@ -475,7 +537,10 @@ h2 {
   object-fit: contain !important;
 }
 
-/* --- CHAT BOX STYLES --- */
+/* ============================================================
+   CHAT BOX
+   Fixed glassmorphism panel on the right side (desktop)
+   ============================================================ */
 #chat-container {
   position: fixed;
   top: 80px;
@@ -492,13 +557,14 @@ h2 {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   animation: slideDown 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
-  /* transition: all 2s cubic-bezier(0.4, 0, 0.2, 1); */
 }
 
+/* Drag handle — non-selectable for cleaner UX */
 #chat-header {
   user-select: none;
 }
 
+/* Scrollable message feed */
 #chat-messages {
   flex-grow: 1;
   padding: 15px;
@@ -510,7 +576,7 @@ h2 {
   animation: slideDown 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* System messages like "Petar has joined" */
+/* System-generated event messages (e.g. "Petar has joined") */
 .system-msg {
   text-align: center;
   color: #94a3b8;
@@ -519,6 +585,7 @@ h2 {
   margin: 5px 0;
 }
 
+/* Individual chat message bubble */
 .chat-msg {
   background: rgba(255, 255, 255, 0.05);
   padding: 8px 12px;
@@ -528,11 +595,9 @@ h2 {
   border: 1px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 8px;
   line-height: 1.5;
-
   overflow-wrap: break-word;
   word-wrap: break-word;
   word-break: break-word;
-
   transition: background 0.2s ease;
   display: flex;
   flex-direction: column;
@@ -546,6 +611,7 @@ h2 {
   color: var(--accent-color) !important;
 }
 
+/* Sender name label inside the message bubble */
 .chat-msg b {
   color: var(--secondary);
   display: block;
@@ -553,6 +619,7 @@ h2 {
   margin-bottom: 2px;
 }
 
+/* Bottom row containing the text input and action buttons */
 .chat-input-wrapper {
   padding: 10px;
   background: rgba(0, 0, 0, 0.2);
@@ -569,14 +636,17 @@ h2 {
   color: white;
   outline: none;
 }
+
+/* Timestamp shown alongside each message */
 .chat-time {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4); /* Bledunjavo bela */
+  color: rgba(255, 255, 255, 0.4);
   margin-right: 8px;
   font-family: monospace;
   vertical-align: middle;
 }
 
+/* Send button */
 #send-btn {
   background: var(--primary);
   border: none;
@@ -590,29 +660,37 @@ h2 {
   transform: scale(1.05);
 }
 
-/* Hide on small screens to avoid overlap */
+/* ============================================================
+   MOBILE CHAT OVERRIDES (max-width: 767px)
+   Chat fills the space between header and controls
+   ============================================================ */
 @media (max-width: 767px) {
   #chat-container {
     position: fixed !important;
-    top: 100px !important; /* Adjust based on header height + margin */
+    top: 100px !important;
     left: 10px !important;
     right: 10px !important;
-    bottom: 80px !important; /* Adjust based on controls height + margin */
+    bottom: 80px !important;
     width: auto !important;
     height: auto !important;
     max-height: none !important;
     z-index: 999 !important;
   }
 
-  /* Optional: Adjust chat input for mobile */
   .chat-input-wrapper {
     padding: 10px !important;
   }
 
+  /* Prevent iOS auto-zoom on input focus */
   #chat-input {
-    font-size: 16px !important; /* Prevent zoom on iOS */
+    font-size: 16px !important;
   }
 }
+
+/* ============================================================
+   AUTOCOMPLETE MENU
+   Command suggestions shown above the chat input
+   ============================================================ */
 #autocomplete-menu {
   position: absolute;
   bottom: 60px;
@@ -643,17 +721,23 @@ h2 {
   color: white;
 }
 
+/* Secondary label showing what a command does */
 .command-desc {
   font-size: 0.7rem;
   opacity: 0.6;
 }
 
+/* Drag-over state for file drop into chat input */
 #chat-input.drag-active {
   background: rgba(74, 222, 128, 0.1) !important;
   border: 2px dashed #4ade80 !important;
 }
 
-/* Stil za dugme unutar inputa */
+/* ============================================================
+   EMOJI PICKER
+   ============================================================ */
+
+/* Toggle button inside the input row */
 #emoji-btn {
   background: none;
   border: none;
@@ -667,10 +751,10 @@ h2 {
   transform: scale(1.2);
 }
 
-/* Poboljšan picker */
+/* Floating emoji grid above the input */
 #emoji-picker {
   position: absolute;
-  bottom: 60px; /* Iznad inputa */
+  bottom: 60px;
   right: 0;
   width: 180px;
   background: var(--glass-bg);
@@ -680,7 +764,7 @@ h2 {
   border-radius: 15px;
   padding: 10px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr); /* 4 u redu */
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   z-index: 1000;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -699,10 +783,15 @@ h2 {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Utility class to hide any element */
 .hidden {
   display: none !important;
 }
 
+/* ============================================================
+   POLL BUTTONS
+   Voting options displayed inside a chat message
+   ============================================================ */
 .poll-btn {
   background: rgba(99, 102, 241, 0.1);
   border: 1px solid var(--glass-border);
@@ -723,6 +812,7 @@ h2 {
   border-color: var(--primary);
 }
 
+/* Vote count badge on poll option */
 .opt-count {
   background: var(--primary);
   padding: 2px 8px;
@@ -731,6 +821,7 @@ h2 {
   font-weight: bold;
 }
 
+/* Drag handle icon in the chat header */
 #chat-drag-handle {
   opacity: 0.6;
   transition: opacity 0.2s;
@@ -740,7 +831,11 @@ h2 {
   opacity: 1;
   color: #4ade80;
 }
-/* === MEDIA CARDS === */
+
+/* ============================================================
+   MEDIA CARDS
+   Rich-preview cards for images, video, audio, docs, and links
+   ============================================================ */
 .media-card {
   margin-top: 8px;
   background: rgba(255, 255, 255, 0.04);
@@ -754,7 +849,7 @@ h2 {
   border-color: rgba(99, 102, 241, 0.4);
 }
 
-/* Slika */
+/* --- Image preview --- */
 .media-img {
   width: 100%;
   max-height: 280px;
@@ -764,7 +859,7 @@ h2 {
   border-radius: 14px 14px 0 0;
 }
 
-/* Video */
+/* --- Video preview --- */
 .media-video {
   width: 100%;
   max-height: 240px;
@@ -773,7 +868,7 @@ h2 {
   border-radius: 14px 14px 0 0;
 }
 
-/* Link ispod medija */
+/* Source link shown below image/video previews */
 .media-link {
   display: block;
   padding: 6px 12px;
@@ -789,7 +884,7 @@ h2 {
   color: #a5b4fc;
 }
 
-/* Audio */
+/* --- Audio card layout --- */
 .media-card--audio {
   display: flex;
   align-items: center;
@@ -819,7 +914,7 @@ h2 {
   accent-color: #6366f1;
 }
 
-/* Dokument */
+/* --- Document card layout --- */
 .media-card--doc {
   display: flex;
   align-items: center;
@@ -844,12 +939,14 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* File extension label (e.g. PDF, DOCX) */
 .media-doc-ext {
   font-size: 0.7rem;
   color: #64748b;
   font-weight: 600;
   letter-spacing: 0.5px;
 }
+/* Download button on doc card */
 .media-doc-btn {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: white;
@@ -866,12 +963,13 @@ h2 {
   opacity: 0.85;
 }
 
-/* YouTube */
+/* --- YouTube embed card --- */
 .media-card--yt {
   padding-bottom: 0;
   width: 320px;
   max-width: 100%;
 }
+/* 16:9 responsive wrapper */
 .media-yt-wrap {
   position: relative;
   padding-bottom: 56.25%;
@@ -887,7 +985,7 @@ h2 {
   border-radius: 14px 14px 0 0;
 }
 
-/* Spotify */
+/* --- Spotify embed card --- */
 .media-card--spotify {
   padding: 8px;
 }
@@ -896,7 +994,7 @@ h2 {
   display: block;
 }
 
-/* Obični link */
+/* --- Plain URL link (no rich preview) --- */
 .media-link-plain {
   color: #818cf8;
   text-decoration: none;
@@ -908,18 +1006,24 @@ h2 {
   text-decoration: underline;
 }
 
-/* Collapsed state for desktop chat */
+/* ============================================================
+   DESKTOP COLLAPSED CHAT STATE (min-width: 768px)
+   Shrinks chat to header-only when collapsed
+   ============================================================ */
 @media (min-width: 768px) {
   #chat-container.collapsed #chat-messages,
   #chat-container.collapsed .chat-input-wrapper {
     display: none !important;
-    /* transition: all 0.3s ease !important; */
   }
   #chat-container.collapsed {
     height: auto !important;
   }
 }
-/* --- LOADING SKELETON --- */
+
+/* ============================================================
+   LOADING SKELETON
+   Shimmer placeholders while chat history is loading
+   ============================================================ */
 .chat-loading-skeleton {
   display: flex;
   flex-direction: column;
@@ -942,6 +1046,7 @@ h2 {
   border: 1px solid var(--glass-border);
 }
 
+/* Width variants to simulate messages of different lengths */
 .skeleton-bubble.short {
   width: 40%;
 }
@@ -952,6 +1057,7 @@ h2 {
   width: 85%;
 }
 
+/* Left-to-right shimmer sweep */
 @keyframes shimmer {
   0% {
     background-position: 200% 0;
@@ -960,7 +1066,11 @@ h2 {
     background-position: -200% 0;
   }
 }
-/* --- UPLOAD BUTTON --- */
+
+/* ============================================================
+   UPLOAD BUTTON
+   File attachment button inside the chat input row
+   ============================================================ */
 #upload-btn {
   transition:
     transform 0.2s ease,
@@ -973,27 +1083,35 @@ h2 {
   color: var(--primary);
 }
 
-/* Ensure the input wrapper has enough space on mobile */
+/* Extra spacing for upload/emoji buttons on mobile */
 @media (max-width: 767px) {
   .chat-input-wrapper {
     gap: 10px;
     padding: 12px;
   }
 }
-/* --- SETTINGS MENU --- */
+
+/* ============================================================
+   SETTINGS MENU
+   Dropdown panel triggered from the chat header
+   ============================================================ */
 .header-actions {
   position: relative;
 }
 
+/* Gear/settings icon button */
 #settings-btn {
   background: none;
   border: none;
-  color: white;
+  opacity: 0.6;
   cursor: pointer;
+  color: #4ade80;
+  padding-top: 4px;
+  margin-left: 10px;
   font-size: 18px;
-  padding: 5px;
 }
 
+/* Dropdown panel */
 #settings-menu {
   position: absolute;
   top: 45px;
@@ -1008,6 +1126,7 @@ h2 {
   min-width: 180px;
 }
 
+/* Settings panel heading */
 #settings-menu h4 {
   margin: 0 0 10px 0;
   font-size: 14px;
@@ -1016,6 +1135,7 @@ h2 {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
 #settings-menu label {
   font-size: 11px;
   display: block;
@@ -1030,6 +1150,8 @@ h2 {
   padding: 5px;
   border-radius: 4px;
 }
+
+/* Upload expiry selector — pointer cursor for clarity */
 #upload-expiry {
   cursor: pointer;
 }
