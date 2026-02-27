@@ -9,7 +9,7 @@
     />
     <title>Linkice</title>
 
-    <!-- Google Fonts: Outfit (light, medium, bold weights) -->
+    <!--  Google Fonts: Outfit (light, medium, bold weights) -->
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap"
       rel="stylesheet"
@@ -267,6 +267,9 @@
          FIREBASE SDKs
          App, Auth, and Realtime Database (compat v9 build)
          ============================================================ -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
     <script>
       // Firebase project config + app init
@@ -300,6 +303,7 @@
          APPLICATION SCRIPTS
          Load order matters: main → utils → ui → rtc → chat
          ============================================================ -->
+    <script src="js/bundle.min.js"></script>
 
   </body>
 </html>
