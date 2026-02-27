@@ -118,3 +118,4 @@ This project is open source. Feel free to use and modify as needed.
 - Google for Gemini AI API
 - Icons from various open sources
 
+
