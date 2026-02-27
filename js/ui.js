@@ -87,10 +87,10 @@ window.drawUser = (uid, username, icon, isMe = false) => {
     if (nameEl) {
       const safeUsername = window.escapeHtml ? window.escapeHtml(username) : username;
       // Only overwrite if the current text looks like a raw number (the fallback)
-      const currentText = nameEl.textContent.replace(" (Ti)", "").trim();
-      if (currentText !== username && /^\d+$/.test(currentText)) {
-        nameEl.textContent = `${safeUsername}${isMe ? " (Ti)" : ""}`;
-      }
+    const currentText = nameEl.textContent.replace(" (Ti)", "").trim();
+    if (currentText !== username) {
+      nameEl.textContent = `${safeUsername}${isMe ? " (Ti)" : ""}`;
+    }
     }
     return;
   }

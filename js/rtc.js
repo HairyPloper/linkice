@@ -36,9 +36,6 @@ async function resolveRemoteName(uid) {
   const MAX_ATTEMPTS = 5;
   const BASE_DELAY   = 200;
 
-  // Wait before first read so Firebase presence has time to propagate
-  await new Promise(res => setTimeout(res, 500));
-
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const snap = await firebase.database()
       .ref(`presence/${window.CHANNEL}/${uid}`)
@@ -52,13 +49,11 @@ async function resolveRemoteName(uid) {
       return { name: data.displayName, icon };
     }
 
-    // Presence not written yet — wait before retrying
     if (attempt < MAX_ATTEMPTS - 1) {
       await new Promise(res => setTimeout(res, BASE_DELAY * Math.pow(2, attempt)));
     }
   }
 
-  // All retries exhausted — fall back to numeric uid
   const fallback = String(uid);
   window.uidNameMap[uid] = fallback;
   return { name: fallback, icon: window.animals[Math.floor(Math.random() * window.animals.length)] };
