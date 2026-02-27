@@ -1103,8 +1103,28 @@ h2 {
 /* Extra spacing for upload/emoji buttons on mobile */
 @media (max-width: 767px) {
   .chat-input-wrapper {
-    gap: 10px;
-    padding: 12px;
+    gap: 4px !important;
+    padding: 8px !important;
+  }
+    #upload-btn {
+    font-size: 1rem !important;
+    padding: 4px !important;
+  }
+
+  #emoji-btn {
+    font-size: 1rem !important;
+    padding: 4px !important;
+  }
+
+  #send-btn {
+    padding: 0 8px !important;
+    font-size: 0.9rem !important;
+  }
+
+  #chat-input {
+  font-size: 16px !important; /* keep 16px to prevent iOS zoom */
+  padding: 6px !important;
+  min-width: 150px !important; /* allows input to shrink below its default min size */
   }
 }
 
