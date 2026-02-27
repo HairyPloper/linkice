@@ -32,18 +32,36 @@ let screenAudioTrack = null;
 // the race between user-joined and user-published.
 // Result is also cached in uidNameMap for getDisplayName().
 // ============================================================
-function resolveRemoteName(uid) {
-  return firebase.database()
-    .ref(`presence/${window.CHANNEL}/${uid}`)
-    .once("value")
-    .then((snap) => {
-      const data = snap.val();
-      const name = data?.displayName || String(uid);
-      const icon = data?.icon || window.animals[Math.floor(Math.random() * window.animals.length)];
-      // Cache so getDisplayName() works for subsequent calls (e.g. chat messages)
-      window.uidNameMap[uid] = name;
-      return { name, icon };
-    });
+async function resolveRemoteName(uid) {
+  const MAX_ATTEMPTS = 5;
+  const BASE_DELAY   = 200;
+
+  // Wait before first read so Firebase presence has time to propagate
+  await new Promise(res => setTimeout(res, 500));
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const snap = await firebase.database()
+      .ref(`presence/${window.CHANNEL}/${uid}`)
+      .once("value");
+
+    const data = snap.val();
+
+    if (data?.displayName) {
+      window.uidNameMap[uid] = data.displayName;
+      const icon = data.icon || window.animals[Math.floor(Math.random() * window.animals.length)];
+      return { name: data.displayName, icon };
+    }
+
+    // Presence not written yet — wait before retrying
+    if (attempt < MAX_ATTEMPTS - 1) {
+      await new Promise(res => setTimeout(res, BASE_DELAY * Math.pow(2, attempt)));
+    }
+  }
+
+  // All retries exhausted — fall back to numeric uid
+  const fallback = String(uid);
+  window.uidNameMap[uid] = fallback;
+  return { name: fallback, icon: window.animals[Math.floor(Math.random() * window.animals.length)] };
 }
 
 // ============================================================
