@@ -27,22 +27,24 @@ jobs:
           # 1. Create structure
           mkdir -p dist/js
           
-          # 2. Copy ALL assets (Favicon, CSS, Media)
+          # 2. Copy ALL assets
           cp index.html dist/index.html
           cp favicon-v1.png dist/favicon-v1.png
           cp -r css dist/css || true
           cp -r src dist/src || true
 
-          # 3. Unified Bundling Logic
-          # This combines all JS files into one, regardless of branch
+          # 3. Bundling Logic
           echo "Bundling JavaScript files..."
           cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js > dist/combined.js
           terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
           
-          # 4. Update HTML
-          # Injects the bundle and removes all individual script tags
-          sed -i '/js\/main.js/i <script src="js/bundle.min.js"></script>' dist/index.html
-          sed -i '/js\/.*\.js/d' dist/index.html
+          # 4. Precise HTML Update
+          # First, insert the new bundle BEFORE the first local script tag
+          sed -i '/<script src="js\/main.js"><\/script>/i <script src="js/bundle.min.js"></script>' dist/index.html
+          
+          # Second, delete ONLY the local script tags (starting with src="js/)
+          # This leaves the Firebase (gstatic.com) scripts untouched!
+          sed -i '/src="js\/.*\.js"/d' dist/index.html
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
