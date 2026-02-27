@@ -27,23 +27,23 @@ jobs:
           # 1. Create structure
           mkdir -p dist/js
           
-          # 2. Copy ALL assets
+          # 2. Copy ALL assets (Favicon, CSS, Media)
           cp index.html dist/index.html
           cp favicon-v1.png dist/favicon-v1.png
           cp -r css dist/css || true
           cp -r src dist/src || true
 
-          # 3. Bundling Logic
+          # 3. Unified Bundling
           echo "Bundling JavaScript files..."
           cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js > dist/combined.js
           terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
           
           # 4. Precise HTML Update
-          # First, insert the new bundle BEFORE the first local script tag
-          sed -i '/<script src="js\/main.js"><\/script>/i <script src="js/bundle.min.js"></script>' dist/index.html
+          # Injects the bundle ONLY before the local main.js tag
+          sed -i '/src="js\/main.js"/i <script src="js/bundle.min.js"></script>' dist/index.html
           
-          # Second, delete ONLY the local script tags (starting with src="js/)
-          # This leaves the Firebase (gstatic.com) scripts untouched!
+          # Deletes ONLY local script tags (starting with src="js/")
+          # This protects your gstatic.com (Firebase) and agora.io links!
           sed -i '/src="js\/.*\.js"/d' dist/index.html
 
       - name: Deploy to GitHub Pages
