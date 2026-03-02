@@ -286,7 +286,7 @@ function renderPoll(msgDiv, snapshotKey, data, color, timeString) {
       const button = document.createElement("button");
       button.className = "poll-btn";
       // ID format lets child_changed listener update the count in real time
-      button.innerHTML = `<span class="opt-text">${escapeHtml(opt)}</span>
+      button.innerHTML = `<span class="opt-text">${opt}</span>
                           <span class="opt-count" id="count-${snapshotKey}-${encodeURIComponent(opt)}">${count}</span>`;
       button.onclick = () => window.vote && window.vote(snapshotKey, opt);
       msgDiv.appendChild(button);
@@ -848,7 +848,7 @@ window.askAI = async (prompt) => {
         // Push the answer to Firebase so all users see the bot response
         window.chatRef.push({
           username:  `🤖 Bot (${modelName})`,
-          text:      `${window.myDisplayName} pita: ${prompt}\nOdgovor: ${aiText}`,
+          text:      `${window.myDisplayName} pita: ${prompt}\n ${aiText}`,
           color:     "#fbbf24",
           timestamp: Date.now(),
         });
