@@ -282,12 +282,17 @@ function renderPoll(msgDiv, snapshotKey, data, color, timeString) {
   // One button per option — clicking calls window.vote()
   if (data.options) {
     data.options.forEach((opt) => {
+
       const count  = data.votes && data.votes[opt] ? data.votes[opt] : 0;
+      // Encode ONLY for the ID attribute
+      const safeIdPart = encodeURIComponent(opt);
+
       const button = document.createElement("button");
       button.className = "poll-btn";
+      
       // ID format lets child_changed listener update the count in real time
       button.innerHTML = `<span class="opt-text">${escapeHtml(opt)}</span>
-                          <span class="opt-count" id="count-${snapshotKey}-${encodeURIComponent(opt)}">${count}</span>`;
+                          <span class="opt-count" id="count-${snapshotKey}-${safeIdPart}">${count}</span>`;
       button.onclick = () => window.vote && window.vote(snapshotKey, opt);
       msgDiv.appendChild(button);
     });
@@ -528,8 +533,7 @@ window.vote = (pollId, option) => {
     return;
   }
 
-  const safeOptionKey = encodeURIComponent(option);
-  const pollRef = window.chatRef.child(`${pollId}/votes/${safeOptionKey}`);
+  const pollRef = window.chatRef.child(`${pollId}/votes/${option}`);
 
   // Atomic increment — safe under concurrent updates
   pollRef.transaction((currentVotes) => (currentVotes || 0) + 1);
@@ -848,7 +852,7 @@ window.askAI = async (prompt) => {
         // Push the answer to Firebase so all users see the bot response
         window.chatRef.push({
           username:  `🤖 Bot (${modelName})`,
-          text:      `${window.myDisplayName} pita: ${prompt}\nOdgovor: ${aiText}`,
+          text:      `${window.myDisplayName} pita: ${prompt}\n ${aiText}`,
           color:     "#fbbf24",
           timestamp: Date.now(),
         });
