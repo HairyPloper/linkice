@@ -286,6 +286,7 @@ if (joinBtn) joinBtn.onclick = async () => {
 
     if (window.innerWidth < 768) {
       window.chatContainer.classList.add("collapsed");
+      document.getElementById("settings-btn").classList.add("hidden");
     }
 
   } catch (e) {
@@ -361,6 +362,8 @@ async function leaveChannel() {
   // --- 9. CHAT — re-expand if collapsed on mobile after joining ---
   if (window.chatContainer) {
     window.chatContainer.classList.remove("collapsed");
+    document.getElementById("settings-btn").classList.remove("hidden");
+    //TODO: settings btn should show on mobile when not in a call, but it's currently tied to the chat header which is hidden when collapsed — consider moving it outside the chat container
   }
 
   // --- 10. SYSTEM MESSAGE ---
