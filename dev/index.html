@@ -173,6 +173,17 @@
               <option value="24h" selected>24 Sata</option>
               <option value="72h">72 Sata</option>
             </select>
+            <hr style="border-color: rgba(255,255,255,0.1); margin: 10px 0;">
+            <h4 style="margin: 5px 0;">Audio</h4>
+            <label for="speaker-select" id="speaker-label" style="display:none;">Zvučnici:</label>
+            <select id="speaker-select" style="display:none;">
+              <option value="">Podrazumevano</option>
+            </select>
+            <hr id="speaker-hr" style="border-color: rgba(255,255,255,0.1); margin: 10px 0; display:none;">
+            <label><input type="checkbox" id="setting-aec"> (AEC) Echo poništavanje</label><br>
+            <label><input type="checkbox" id="setting-agc"> (AGC) Auto pojačanje</label><br>
+            <label><input type="checkbox" id="setting-ans"> (ANS) Uklanjanje šuma</label>
+            
           </div>
         </div>
         <!-- Drag handle — lets users reposition the chat panel -->
