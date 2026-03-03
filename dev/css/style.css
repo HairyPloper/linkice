@@ -1095,6 +1095,11 @@ h2 {
   color: rgba(255, 255, 255, 0.6);
 }
 
+#upload-btn:hover {
+  transform: scale(1.05);
+  color: #4ade80;
+}
+
 #upload-btn:active {
   transform: scale(0.9);
   color: var(--primary);
@@ -1146,6 +1151,11 @@ h2 {
   padding-top: 4px;
   margin-left: 10px;
   font-size: 18px;
+}
+
+#settings-btn:hover {
+  opacity: 1;
+  color: #4ade80;
 }
 
 /* Dropdown panel */
