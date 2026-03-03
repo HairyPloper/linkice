@@ -24,27 +24,40 @@ jobs:
 
       - name: Build and Bundle
         run: |
-          # 1. Create structure
           mkdir -p dist/js
-          
-          # 2. Copy ALL assets (Favicon, CSS, Media)
           cp index.html dist/index.html
-          cp favicon-v1.png dist/favicon-v1.png
           cp -r css dist/css || true
           cp -r src dist/src || true
 
-          # 3. Unified Bundling
-          echo "Bundling JavaScript files..."
-          cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js > dist/combined.js
-          terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
-          
-          # 4. Precise HTML Update
-          # Injects the bundle ONLY before the local main.js tag
-          sed -i '/src="js\/main.js"/i <script src="js/bundle.min.js"></script>' dist/index.html
-          
-          # Deletes ONLY local script tags (starting with src="js/")
-          # This protects your gstatic.com (Firebase) and agora.io links!
-          sed -i '/src="js\/.*\.js"/d' dist/index.html
+          if [ "${{ github.ref_name }}" == "dev_b" ]; then
+            echo "Processing dev_b: Bundling 5 files..."
+            cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js > dist/combined.js
+            terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
+            
+            # 1. Look for the main.js tag and swap it for the bundle.min.js tag
+            sed -i 's|<script src="js/main.js"></script>|<script src="js/bundle.min.js"></script>|' dist/index.html
+            
+            # 2. Delete the other 4 specific local script tags
+            # We use specific names so we don't accidentally delete Firebase or Agora
+            sed -i '\|<script src="js/utils.js"></script>|d' dist/index.html
+            sed -i '\|<script src="js/ui.js"></script>|d' dist/index.html
+            sed -i '\|<script src="js/rtc.js"></script>|d' dist/index.html
+            sed -i '\|<script src="js/chat.js"></script>|d' dist/index.html
+          else
+            echo "Processing main: Bundling 5 files..."
+            cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js > dist/combined.js
+            terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
+            
+            # 1. Look for the main.js tag and swap it for the bundle.min.js tag
+            sed -i 's|<script src="js/main.js"></script>|<script src="js/bundle.min.js"></script>|' dist/index.html
+            
+            # 2. Delete the other 4 specific local script tags
+            # We use specific names so we don't accidentally delete Firebase or Agora
+            sed -i '\|<script src="js/utils.js"></script>|d' dist/index.html
+            sed -i '\|<script src="js/ui.js"></script>|d' dist/index.html
+            sed -i '\|<script src="js/rtc.js"></script>|d' dist/index.html
+            sed -i '\|<script src="js/chat.js"></script>|d' dist/index.html
+          fi
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
