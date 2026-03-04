@@ -250,12 +250,30 @@ function formatMediaLinks(url) {
   // --- Spotify embed (track, album, or playlist) ---
   if (spotifyMatch) {
     const [, type, id] = spotifyMatch;
-    const h = type === "track" ? "80" : "152"; // Compact height for tracks
+
+    // Track = compact (80px), single song = standard (152px),
+    // playlist/album = full view with native volume slider (352px)
+    const heightMap = {
+      track: 152,
+      episode: 152,
+      album: 352,
+      playlist: 352,
+      artist: 352,
+    };
+    const h = heightMap[type] ?? 152;
+    const isFull = h > 152;
+
     return `
-      <div class="media-card media-card--spotify">
-        <iframe src="https://open.spotify.com/embed/${type}/${id}"
-          width="100%" height="${h}" frameborder="0"
-          allow="encrypted-media" class="media-spotify"></iframe>
+      <div class="media-card media-card--spotify ${isFull ? "media-card--spotify-full" : ""}">
+        <iframe
+          src="https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0"
+          width="100%"
+          height="${h}"
+          frameborder="0"
+          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+          loading="lazy"
+          class="media-spotify"
+        ></iframe>
       </div>`;
   }
 
