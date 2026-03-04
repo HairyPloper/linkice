@@ -1004,11 +1004,26 @@ h2 {
 
 /* --- Spotify embed card --- */
 .media-card--spotify {
-  padding: 8px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #121212;
+  margin: 8px 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: box-shadow 0.2s ease;
 }
+
+.media-card--spotify:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.media-card--spotify-full {
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+}
+
 .media-spotify {
-  border-radius: 10px;
   display: block;
+  border-radius: inherit;
 }
 
 /* --- Plain URL link (no rich preview) --- */
@@ -1127,9 +1142,9 @@ h2 {
   }
 
   #chat-input {
-  font-size: 16px !important; /* keep 16px to prevent iOS zoom */
-  padding: 6px !important;
-  min-width: 150px !important; /* allows input to shrink below its default min size */
+    font-size: 16px !important; /* keep 16px to prevent iOS zoom */
+    padding: 6px !important;
+    min-width: 150px !important; /* allows input to shrink below its default min size */
   }
 }
 
