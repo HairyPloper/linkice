@@ -519,6 +519,17 @@ function startChat() {
       });
     }
   });
+
+  // Presence listener — updates muted state on remote avatars
+  firebase.database()
+    .ref(`presence/${window.CHANNEL}`)
+    .on("child_changed", (snapshot) => {
+      const data = snapshot.val();
+      const uid  = snapshot.key;
+      if (!data) return;
+      const avatar = document.getElementById(`avatar-${uid}`);
+      if (avatar) avatar.classList.toggle("muted", data.muted === true);
+    });
 }
 
 // ============================================================

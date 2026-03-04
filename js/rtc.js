@@ -389,6 +389,11 @@ window.toggleMute = async () => {
   // setEnabled(false) mutes without destroying the track
   await localTracks.audioTrack.setEnabled(!isMuted);
 
+  // Update mute state in Firebase so remote users can see it in their UI
+  firebase.database()
+  .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
+  .update({ muted: isMuted });
+
   // Visually dim the local avatar when muted
   const avatarEl = document.getElementById(`avatar-${window.client.uid}`);
   if (avatarEl) avatarEl.classList.toggle("muted", isMuted);
