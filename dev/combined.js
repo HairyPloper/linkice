@@ -923,6 +923,11 @@ window.toggleMute = async () => {
   // setEnabled(false) mutes without destroying the track
   await localTracks.audioTrack.setEnabled(!isMuted);
 
+  // Update mute state in Firebase so remote users can see it in their UI
+  firebase.database()
+  .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
+  .update({ muted: isMuted });
+
   // Visually dim the local avatar when muted
   const avatarEl = document.getElementById(`avatar-${window.client.uid}`);
   if (avatarEl) avatarEl.classList.toggle("muted", isMuted);
@@ -1464,6 +1469,17 @@ function startChat() {
       });
     }
   });
+
+  // Presence listener — updates muted state on remote avatars
+  firebase.database()
+    .ref(`presence/${window.CHANNEL}`)
+    .on("child_changed", (snapshot) => {
+      const data = snapshot.val();
+      const uid  = snapshot.key;
+      if (!data) return;
+      const avatar = document.getElementById(`avatar-${uid}`);
+      if (avatar) avatar.classList.toggle("muted", data.muted === true);
+    });
 }
 
 // ============================================================
