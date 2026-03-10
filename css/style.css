@@ -1337,6 +1337,74 @@ h2 {
   margin-left: 4px;
 }
 
+#wb-color {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 40px;
+  height: 32px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  padding: 2px;
+  transition: border-color 0.2s;
+}
+
+#wb-color:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+#wb-color::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+#wb-color::-webkit-color-swatch {
+  border: none;
+  border-radius: 5px;
+}
+
+#wb-size {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 120px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  outline: none;
+  cursor: pointer;
+}
+
+#wb-size::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s;
+}
+
+#wb-size::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  background: #60a5fa;
+}
+
+#wb-size::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+#wb-size::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
 @keyframes confetti-fall {
   0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
   100% { transform: translateY(400px) rotate(720deg); opacity: 0; }

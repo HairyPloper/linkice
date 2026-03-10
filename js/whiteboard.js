@@ -34,7 +34,7 @@ function initWhiteboard() {
   // ============================================================
   let drawing      = false;
   let isEraser     = false;
-  let currentColor = "#4ade80";
+  let currentColor = "#000000";
   let currentSize  = 3;
   let lastX = 0, lastY = 0;
   let myWord = null;
@@ -49,8 +49,15 @@ function initWhiteboard() {
   const WORDS = [
     "petak","ponedeljak","familija","doktor","tiba","linija","pomfrit","gospodarica","osvezenje","majonez",
     "boks","umor","fabrika","sizofrenija","ruke","gas","spavanje","makarone","gram","pirat",
-    "pepko","inkubator","dusek","dragon","smi","federacija","drugostepena","prekovremeno","brisanje","pivo"
+    "pepko","inkubator","dusek","krompiri","smi","federacija","drugostepena","prekovremeno","brisanje","pivo"
   ];
+
+  // ============================================================
+  // TIMER CONFIG
+  // ============================================================
+  const TIMER_ENABLED  = true;   // ← flip to false to disable
+  const TIMER_DURATION = 60;     // seconds
+  let timerInterval = null;
 
   // ============================================================
   // CANVAS SIZING
@@ -105,6 +112,7 @@ function initWhiteboard() {
       drawer: window.myDisplayName,
       active: true,
       winner: null,
+      endsAt:    TIMER_ENABLED ? Date.now() + TIMER_DURATION * 1000 : null,
     });
 
     window.chatRef.push({
@@ -119,6 +127,7 @@ function initWhiteboard() {
   // WORD GAME — STOP
   // ============================================================
   stopBtn.onclick = () => {
+    clearInterval(timerInterval);
     gameRef.remove();
     wordDisplay.textContent = "";
     myWord = null;
@@ -152,9 +161,44 @@ function initWhiteboard() {
         : `✅ Reč je bila: ${data.word}`;
     }
 
+    // Start countdown only for the drawer, only if timer is on and game is active
+    if (TIMER_ENABLED && isDrawer && data.active && data.endsAt) {
+    startTimer(data.endsAt);
+    }
+
     // Only the drawer sees the stop button, only while game is active
     stopBtn.style.display = (isDrawer && data.active) ? "inline-block" : "none";
   });
+
+  // ============================================================
+  // WORD GAME — TIMER
+  // ============================================================
+  function startTimer(endsAt) {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const secondsLeft = Math.ceil((endsAt - Date.now()) / 1000);
+    if (secondsLeft <= 0) {
+      clearInterval(timerInterval);
+      // Time's up — reveal word and end game
+      gameRef.once("value", (snap) => {
+        const data = snap.val();
+        if (!data || !data.active) return;
+        gameRef.remove();
+        window.chatRef.push({
+          username:  "Sistem",
+          text:      `⏰ Vreme je isteklo! Reč je bila: ${data.word}`,
+          color:     "#f87171",
+          timestamp: Date.now(),
+        });
+      });
+      return;
+    }
+    // Update display for the drawer only
+    if (myWord) {
+      wordDisplay.textContent = `✏️ Tvoja reč: ${myWord} (${secondsLeft}s)`;
+    }
+  }, 1000);
+}
 
   // ============================================================
   // WORD GAME — CONFETTI
@@ -235,7 +279,7 @@ function initWhiteboard() {
   // ============================================================
   // FIREBASE — REAL TIME STROKE LISTENER
   // ============================================================
-  wbRef.limitToLast(2000).on("child_added", (snap) => {
+  wbRef.on("child_added", (snap) => {
     const d = snap.val();
     if (!d) return;
     drawLine(
@@ -261,7 +305,7 @@ function initWhiteboard() {
   // ============================================================
   function loadSnapshot() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    wbRef.limitToLast(2000).once("value", (snap) => {
+    wbRef.limitToLast(10000).once("value", (snap) => {
       snap.forEach((child) => {
         const d = child.val();
         drawLine(
