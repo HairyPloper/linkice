@@ -595,7 +595,7 @@ window.client.on("user-left", (user) => {
   delete window.uidNameMap[user.uid];
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
-    window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#ffcc00");
+    window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
 
   const el = document.getElementById(`user-${user.uid}`);
   if (el) el.remove();
@@ -609,7 +609,7 @@ window.client.on("user-left", (user) => {
 window.client.on("user-joined", async (user) => {
   const { name, icon } = await resolveRemoteName(user.uid);
   if (window.appendMessage)
-    window.appendMessage("Sistem", `**${name}** se priključio.`, "#ffcc00");
+    window.appendMessage("Sistem", `**${name}** se priključio.`, "#fbbf24");
   if (user.uid !== window.client.uid) window._playTone(660, 0.1);
 });
 
@@ -683,7 +683,7 @@ if (joinBtn) joinBtn.onclick = async () => {
       .onDisconnect().remove();
       
     if (window.appendMessage)
-      window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#ffcc00");
+      window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#fbbf24");
 
     // --- 5. UPDATE UI TO CONNECTED STATE ---
     window.drawUser(window.client.uid, window.myDisplayName, window.myIcon, true);
@@ -778,7 +778,7 @@ async function leaveChannel() {
 
   // --- 10. SYSTEM MESSAGE ---
   if (window.appendMessage) {
-    window.appendMessage("Sistem", "Izašao si iz kanala.", "#ffcc00");
+    window.appendMessage("Sistem", "Izašao si iz kanala.", "#fbbf24");
   }
 }
 
@@ -1220,7 +1220,7 @@ function handleCommand(text) {
         const nameEl = document.querySelector(`#user-${window.client?.uid} .username`);
         if (nameEl) nameEl.textContent = `${newNick} (Ti)`;
 
-        window.appendMessage("Sistem", `Nadimak promenjen u: **${newNick}**`, "#ffcc00");
+        window.appendMessage("Sistem", `Nadimak promenjen u: **${newNick}**`, "#fbbf24");
       }
       return true;
 
@@ -1230,6 +1230,7 @@ function handleCommand(text) {
       window.chatRef.push({
         username: "Sistem",
         text: `🎲 **${window.myDisplayName}** rola: **${Math.floor(Math.random() * max) + 1}** (1-${max})`,
+        color: "#fbbf24",
       });
       return true;
     case "/crtkica":
@@ -1285,7 +1286,7 @@ function handleCommand(text) {
     case "/ping":
       if (window.client && typeof window.client.getRTCStats === "function") {
         const rtc = window.client.getRTCStats();
-        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${rtc.UserCount}`, "#805ff5");
+        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${rtc.UserCount}`, "#fbbf24");
       }
       return true;
 
@@ -1378,7 +1379,7 @@ function startChat() {
             window.chatRef.push({
               username:  "Sistem",
               text:      `🎉 ${data.username} pogodio reč: ${game.word}!`,
-              color:     "#ffcc00",
+              color:     "#fbbf24",
               timestamp: Date.now(),
             });
             if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
@@ -1490,7 +1491,7 @@ async function uploadFile(file, expiry) {
 /** Uploads a file and posts the resulting URL as a chat message */
 window.handleFileUpload = async (file) => {
   if (window.appendMessage)
-    window.appendMessage("Sistem", `Slanje fajla: ${file.name}...`, "#ffcc00");
+    window.appendMessage("Sistem", `Slanje fajla: ${file.name}...`, "#fbbf24");
 
   const expirySelect = document.getElementById("upload-expiry");
   const expiry  = expirySelect ? expirySelect.value : "trajno";
@@ -1501,7 +1502,6 @@ window.handleFileUpload = async (file) => {
     window.chatRef.push({
       username:  window.myDisplayName,
       text:      `Dostupno ${expiry}: ${fileUrl}`,
-      color:     window.myColor || "#ffffff",
       timestamp: Date.now(),
     });
   } else {
@@ -1933,7 +1933,7 @@ function initWhiteboard() {
     window.chatRef.push({
       username:  "Sistem",
       text:      `🎮 ${window.myDisplayName} crta reč — pogodite šta je...`,
-      color:     "#ffcc00",
+      color:     "#fbbf24",
       timestamp: Date.now(),
     });
   };
@@ -1950,7 +1950,7 @@ function initWhiteboard() {
     window.chatRef.push({
       username:  "Sistem",
       text:      `🛑 ${window.myDisplayName} je zaustavio igru.`,
-      color:     "#ffcc00",
+      color:     "#fbbf24",
       timestamp: Date.now(),
     });
   };
@@ -2002,7 +2002,7 @@ function initWhiteboard() {
         window.chatRef.push({
           username:  "Sistem",
           text:      `⏰ Vreme je isteklo! Reč je bila: ${data.word}`,
-          color:     "#ffcc00",
+          color:     "#fbbf24",
           timestamp: Date.now(),
         });
       });
