@@ -38,17 +38,25 @@ if (videoToggle && bgVideo) {
 // Covers Chrome, Firefox, Safari, Edge, Brave on mobile
 // ============================================================
 if (bgVideo && bgVideo.paused) {
+  // Force properties before attempting play
+  bgVideo.muted = true;
+  bgVideo.playsInline = true; 
+
   const playOnInteraction = () => {
-    bgVideo.play().catch(() => {}); // silent catch for Firefox/Safari blocks
-    document.removeEventListener("touchstart", playOnInteraction);
-    document.removeEventListener("click", playOnInteraction);
-    document.removeEventListener("touchend", playOnInteraction);
-    document.removeEventListener("keydown", playOnInteraction);
+    bgVideo.play()
+      .then(() => {
+        console.log("Video started successfully!");
+      })
+      .catch((err) => {
+        console.warn("Play failed:", err);
+      });
   };
-  document.addEventListener("touchstart", playOnInteraction, { once: true });
-  document.addEventListener("touchend",   playOnInteraction, { once: true });
-  document.addEventListener("click",      playOnInteraction, { once: true });
-  document.addEventListener("keydown",    playOnInteraction, { once: true });
+
+  // Using 'once: true' is good, but keep it consistent across all listeners
+  const events = ["touchstart", "touchend", "click", "keydown"];
+  events.forEach(evt => {
+    document.addEventListener(evt, playOnInteraction, { once: true });
+  });
 }
 
 // ============================================================
