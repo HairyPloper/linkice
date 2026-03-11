@@ -269,16 +269,20 @@ if (videoToggle && bgVideo) {
 
 // ============================================================
 // MOBILE AUTOPLAY FIX
-// Mobile browsers block autoplay — play on first user interaction
+// Covers Chrome, Firefox, Safari, Edge, Brave on mobile
 // ============================================================
 if (bgVideo && bgVideo.paused) {
   const playOnInteraction = () => {
-    bgVideo.play();
+    bgVideo.play().catch(() => {}); // silent catch for Firefox/Safari blocks
     document.removeEventListener("touchstart", playOnInteraction);
     document.removeEventListener("click", playOnInteraction);
+    document.removeEventListener("touchend", playOnInteraction);
+    document.removeEventListener("keydown", playOnInteraction);
   };
   document.addEventListener("touchstart", playOnInteraction, { once: true });
-  document.addEventListener("click", playOnInteraction, { once: true });
+  document.addEventListener("touchend",   playOnInteraction, { once: true });
+  document.addEventListener("click",      playOnInteraction, { once: true });
+  document.addEventListener("keydown",    playOnInteraction, { once: true });
 }
 
 // ============================================================
