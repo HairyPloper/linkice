@@ -511,11 +511,35 @@ h2 {
   object-fit: cover !important;
 }
 
+/*=============================================================
+   HIDE DEFAULT VIDEO CONTROLS
+   Keeps the video interactive for click-to-toggle and right-click menu
+   ============================================================ */
+/* Chrome, Safari, Edge, Brave */
 #bgVideo::-webkit-media-controls {
   display: none !important;
 }
 #bgVideo::-webkit-media-controls-start-playback-button {
   display: none !important;
+}
+#bgVideo::-webkit-media-controls-panel {
+  display: none !important;
+}
+#bgVideo::-webkit-media-controls-play-button {
+  display: none !important;
+}
+#bgVideo::-webkit-media-controls-overlay-play-button {
+  display: none !important;
+}
+
+/* Firefox */
+#bgVideo::-moz-media-controls {
+  display: none !important;
+}
+
+/* General fallback — all browsers */
+#bgVideo {
+  pointer-events: none; /* also prevents right-click save video */
 }
 
 /* ============================================================
