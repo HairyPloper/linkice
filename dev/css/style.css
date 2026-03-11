@@ -83,13 +83,11 @@ body {
 /* Centers and scales the video to cover the viewport */
 .video-background video {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 100%;
-  min-height: 100%;
-  width: auto;
-  height: auto;
+  top: 0;
+  left: 0;
+  
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 
@@ -105,21 +103,25 @@ body {
   z-index: -1;
 }
 
+/* Fallback background image if video fails to load or is disabled */
+.bg-image {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 100%;
+  min-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: cover;
+}
+
 /* ============================================================
    MOBILE OVERRIDES (max-width: 767px)
    Hides video, repositions chat and controls for small screens
    ============================================================ */
 @media (max-width: 767px) {
-  /* Hide video background and toggle on mobile */
-  .video-background,
-  .video-toggle {
-    display: none !important;
-  }
 
-  /* Show snow toggle instead */
-  .snow-toggle {
-    display: block !important;
-  }
 
   /* Hide screen share button to prevent UI clutter on mobile */
   .screen-btn,
@@ -180,8 +182,8 @@ body {
   min-width: 300px;
   text-align: center;
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
   border-radius: 50px;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
@@ -670,7 +672,7 @@ h2 {
 /* Unread message badge on collapsed chat header */
 #unread-badge {
   background: rgba(74, 222, 128, 0.15);
-  color: #4ade80;
+  color: #805ff5;
   font-size: 0.7rem;
   font-weight: bold;
   border-radius: 20px;
@@ -754,7 +756,7 @@ h2 {
 /* Drag-over state for file drop into chat input */
 #chat-input.drag-active {
   background: rgba(74, 222, 128, 0.1) !important;
-  border: 2px dashed #4ade80 !important;
+  border: 2px dashed #805ff5 !important;
 }
 
 /* ============================================================
@@ -853,7 +855,7 @@ h2 {
 
 #chat-drag-handle:hover {
   opacity: 1;
-  color: #4ade80;
+  color: #805ff5;
 }
 
 /* ============================================================
@@ -1119,7 +1121,7 @@ h2 {
 
 #upload-btn:hover {
   transform: scale(1.05);
-  color: #4ade80;
+  color: #805ff5;
 }
 
 #upload-btn:active {
@@ -1133,7 +1135,7 @@ h2 {
     gap: 4px !important;
     padding: 8px !important;
   }
-    #upload-btn {
+  #upload-btn {
     font-size: 1rem !important;
     padding: 4px !important;
   }
@@ -1169,7 +1171,7 @@ h2 {
   border: none;
   opacity: 0.6;
   cursor: pointer;
-  color: #4ade80;
+  color: #805ff5;
   padding-top: 4px;
   margin-left: 10px;
   font-size: 18px;
@@ -1177,7 +1179,7 @@ h2 {
 
 #settings-btn:hover {
   opacity: 1;
-  color: #4ade80;
+  color: #805ff5;
 }
 
 /* Dropdown panel */
@@ -1237,8 +1239,8 @@ h2 {
   width: 800px;
   height: 600px;
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   display: flex;
@@ -1263,7 +1265,7 @@ h2 {
 #whiteboard-drag-handle {
   padding: 5px;
   display: flex;
-  color: #4ade80;
+  color: #805ff5;
   cursor: grab;
   opacity: 0.6;
   transition: opacity 0.2s;
@@ -1271,7 +1273,7 @@ h2 {
 
 #whiteboard-drag-handle:hover {
   opacity: 1;
-  color: #4ade80;
+  color: #805ff5;
 }
 
 #whiteboard-toolbar {
@@ -1313,13 +1315,13 @@ h2 {
   border: none;
   opacity: 0.6;
   cursor: pointer;
-  color: #4ade80;
+  color: #805ff5;
   font-size: 18px;
 }
 
 #whiteboard-close:hover {
   opacity: 1;
-  color: #4ade80;
+  color: #805ff5;
 }
 
 #whiteboard-canvas {

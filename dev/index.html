@@ -28,15 +28,14 @@
 
     <!-- ============================================================
          VIDEO BACKGROUND
-         Looping ambient video with a dark overlay for contrast
+         ambient video with a dark overlay for contrast
+         src="https://us-west-2-epicgames.graphassets.com/cmkr1i7c9047e07n0es5291ez/cmis28lk91sq907mv9aydajlk"
          ============================================================ -->
     <div class="video-background">
       <div class="video-overlay"></div>
-      <video loop muted playsinline preload="auto" id="bgVideo">
-        <source
-          src="https://us-west-2-epicgames.graphassets.com/cmkr1i7c9047e07n0es5291ez/cmis28lk91sq907mv9aydajlk"
-          type="video/mp4"
-        />
+      <video loop muted playsinline preload="auto" autoplay id="bgVideo">
+        <source src="src/nebula_bounce.webm" type="video/webm" />
+        <source src="src/nebula_bounce.mp4"  type="video/mp4" />
       </video>
     </div>
 
@@ -115,16 +114,6 @@
           🎬
         </button>
 
-        <!-- Toggle snow/particle effect (mobile only, hidden via CSS on desktop) -->
-        <button
-          id="snowToggle"
-          class="video-toggle snow-toggle"
-          title="Uključi/Isključi pahuljicu"
-          style="top: 8px; right: 50px"
-        >
-          ❄️
-        </button>
-
         <!-- Settings dropdown (file upload expiry) -->
         <div class="header-actions">
           <button id="settings-btn" title="Postavke">
@@ -173,7 +162,7 @@
         <!-- Drag handle — lets users reposition the chat panel -->
         <div
           id="chat-drag-handle"
-          style="cursor: grab; padding: 5px; color: #4ade80; display: flex"
+          style="cursor: grab; padding: 5px; color: #805ff5; display: flex"
         >
           <!-- Six-dot grid icon (SVG) -->
           <svg
@@ -287,7 +276,7 @@
         <button id="whiteboard-close">✕</button>
       </div>
       <div id="whiteboard-toolbar">
-        <input type="color" id="wb-color" value="#000000" title="Boja">
+        <input type="color" id="wb-color" value="#ffffff" title="Boja">
         <input type="range" id="wb-size" min="1" max="20" value="3" title="Veličina">
         <button id="wb-eraser" class="wb-btn">⬜ Gumica</button>
         <button id="wb-clear" class="wb-btn">🗑️ Obriši sve</button>
