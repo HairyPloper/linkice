@@ -172,7 +172,7 @@ window.client.on("user-left", (user) => {
   delete window.uidNameMap[user.uid];
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
-    window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#ffcc00");
+    window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
 
   const el = document.getElementById(`user-${user.uid}`);
   if (el) el.remove();
@@ -186,7 +186,7 @@ window.client.on("user-left", (user) => {
 window.client.on("user-joined", async (user) => {
   const { name, icon } = await resolveRemoteName(user.uid);
   if (window.appendMessage)
-    window.appendMessage("Sistem", `**${name}** se priključio.`, "#ffcc00");
+    window.appendMessage("Sistem", `**${name}** se priključio.`, "#fbbf24");
   if (user.uid !== window.client.uid) window._playTone(660, 0.1);
 });
 
@@ -260,7 +260,7 @@ if (joinBtn) joinBtn.onclick = async () => {
       .onDisconnect().remove();
       
     if (window.appendMessage)
-      window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#ffcc00");
+      window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#fbbf24");
 
     // --- 5. UPDATE UI TO CONNECTED STATE ---
     window.drawUser(window.client.uid, window.myDisplayName, window.myIcon, true);
@@ -355,7 +355,7 @@ async function leaveChannel() {
 
   // --- 10. SYSTEM MESSAGE ---
   if (window.appendMessage) {
-    window.appendMessage("Sistem", "Izašao si iz kanala.", "#ffcc00");
+    window.appendMessage("Sistem", "Izašao si iz kanala.", "#fbbf24");
   }
 }
 

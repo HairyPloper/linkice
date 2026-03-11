@@ -119,7 +119,7 @@ function initWhiteboard() {
     window.chatRef.push({
       username:  "Sistem",
       text:      `🎮 ${window.myDisplayName} crta reč — pogodite šta je...`,
-      color:     "#ffcc00",
+      color:     "#fbbf24",
       timestamp: Date.now(),
     });
   };
@@ -136,7 +136,7 @@ function initWhiteboard() {
     window.chatRef.push({
       username:  "Sistem",
       text:      `🛑 ${window.myDisplayName} je zaustavio igru.`,
-      color:     "#ffcc00",
+      color:     "#fbbf24",
       timestamp: Date.now(),
     });
   };
@@ -188,7 +188,7 @@ function initWhiteboard() {
         window.chatRef.push({
           username:  "Sistem",
           text:      `⏰ Vreme je isteklo! Reč je bila: ${data.word}`,
-          color:     "#ffcc00",
+          color:     "#fbbf24",
           timestamp: Date.now(),
         });
       });

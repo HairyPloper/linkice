@@ -394,7 +394,7 @@ function handleCommand(text) {
         const nameEl = document.querySelector(`#user-${window.client?.uid} .username`);
         if (nameEl) nameEl.textContent = `${newNick} (Ti)`;
 
-        window.appendMessage("Sistem", `Nadimak promenjen u: **${newNick}**`, "#ffcc00");
+        window.appendMessage("Sistem", `Nadimak promenjen u: **${newNick}**`, "#fbbf24");
       }
       return true;
 
@@ -404,6 +404,7 @@ function handleCommand(text) {
       window.chatRef.push({
         username: "Sistem",
         text: `🎲 **${window.myDisplayName}** rola: **${Math.floor(Math.random() * max) + 1}** (1-${max})`,
+        color: "#fbbf24",
       });
       return true;
     case "/crtkica":
@@ -459,7 +460,7 @@ function handleCommand(text) {
     case "/ping":
       if (window.client && typeof window.client.getRTCStats === "function") {
         const rtc = window.client.getRTCStats();
-        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${rtc.UserCount}`, "#805ff5");
+        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${rtc.UserCount}`, "#fbbf24");
       }
       return true;
 
@@ -552,7 +553,7 @@ function startChat() {
             window.chatRef.push({
               username:  "Sistem",
               text:      `🎉 ${data.username} pogodio reč: ${game.word}!`,
-              color:     "#ffcc00",
+              color:     "#fbbf24",
               timestamp: Date.now(),
             });
             if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
@@ -664,7 +665,7 @@ async function uploadFile(file, expiry) {
 /** Uploads a file and posts the resulting URL as a chat message */
 window.handleFileUpload = async (file) => {
   if (window.appendMessage)
-    window.appendMessage("Sistem", `Slanje fajla: ${file.name}...`, "#ffcc00");
+    window.appendMessage("Sistem", `Slanje fajla: ${file.name}...`, "#fbbf24");
 
   const expirySelect = document.getElementById("upload-expiry");
   const expiry  = expirySelect ? expirySelect.value : "trajno";
@@ -675,7 +676,6 @@ window.handleFileUpload = async (file) => {
     window.chatRef.push({
       username:  window.myDisplayName,
       text:      `Dostupno ${expiry}: ${fileUrl}`,
-      color:     window.myColor || "#ffffff",
       timestamp: Date.now(),
     });
   } else {
