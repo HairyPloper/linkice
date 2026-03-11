@@ -536,6 +536,10 @@ h2 {
 #bgVideo::-moz-media-controls {
   display: none !important;
 }
+#bgVideo::-moz-list-bullet {
+    display: none !important;
+}
+
 
 /* General fallback — all browsers */
 #bgVideo {
