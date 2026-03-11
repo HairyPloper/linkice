@@ -1,4 +1,4 @@
-# Voice Room Web
+# Linkice
 
 A modern web-based voice chat application built with Agora WebRTC, Firebase, and vanilla JavaScript. Features real-time audio communication, chat messaging, AI integration, polls, and more.
 
