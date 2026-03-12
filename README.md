@@ -49,7 +49,7 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 ```
 ✅  ?space=gaming
 ✅  ?space=friday-night
-✅  ?space=marko_and_friends
+✅  ?space=pako_and_friends
 ❌  ?space=petak veče       (space stripped → falls back to default)
 ❌  ?space=cet123           (this works, diacritics must be avoided)
 ```
