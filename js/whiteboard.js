@@ -40,8 +40,31 @@ function initWhiteboard() {
   let myWord = null;
 
   // Firebase refs
-  const wbRef   = firebase.database().ref(`whiteboard/${window.CHANNEL}`);
-  const gameRef = firebase.database().ref(`whiteboard-game/${window.CHANNEL}`);
+  const wbRef    = firebase.database().ref(`whiteboard/${window.CHANNEL}`);
+  const wbClrRef = firebase.database().ref(`whiteboard-cleared/${window.CHANNEL}`);
+  const gameRef  = firebase.database().ref(`whiteboard-game/${window.CHANNEL}`);
+
+  // ============================================================
+  // STROKE BUFFER — THROTTLED FIREBASE WRITES
+  // FLUSH_INTERVAL ms (~30 fps).
+  // ============================================================
+  const FLUSH_INTERVAL = 30; // ms
+  let   strokeBuffer   = [];
+  let   flushTimer     = null;
+
+  function scheduleFlush() {
+    if (flushTimer) return;
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      if (!strokeBuffer.length) return;
+      const batch = {};
+      strokeBuffer.forEach(stroke => {
+        batch[wbRef.push().key] = stroke;
+      });
+      strokeBuffer = [];
+      wbRef.update(batch);
+    }, FLUSH_INTERVAL);
+  }
 
   // ============================================================
   // WORD LIST
@@ -95,8 +118,10 @@ function initWhiteboard() {
     eraserBtn.classList.toggle("active", isEraser);
   };
 
-  clearBtn.onclick = () => {
-    wbRef.remove();
+  clearBtn.onclick = async () => {
+    await wbClrRef.set({ clearedAt: Date.now(), by: window.myDisplayName });
+    await wbRef.remove();
+    setTimeout(() => wbClrRef.remove(), 2000);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
@@ -244,7 +269,7 @@ function initWhiteboard() {
 
     drawLine(lastX, lastY, x, y, isEraser ? "#000000" : currentColor, currentSize, isEraser);
 
-    wbRef.push({
+    strokeBuffer.push({
       x1:     lastX / canvas.width,
       y1:     lastY / canvas.height,
       x2:     x     / canvas.width,
@@ -253,6 +278,7 @@ function initWhiteboard() {
       size:   currentSize,
       eraser: isEraser,
     });
+    scheduleFlush();
 
     lastX = x;
     lastY = y;
@@ -294,9 +320,11 @@ function initWhiteboard() {
     );
   });
 
-  // Clear canvas when someone clicks clear
-  wbRef.on("value", (snap) => {
-    if (!snap.exists()) {
+  // ============================================================
+  // FIREBASE — CLEAR SIGNAL LISTENER
+  // ============================================================
+  wbClrRef.on("value", (snap) => {
+    if (snap.exists()) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
   });

@@ -52,7 +52,6 @@ let selectedIndex = 0;
 // ============================================================
 firebase.auth().onAuthStateChanged((user) => {
   if (user) {
-    console.log("Authenticated! Starting chat...");
     startChat();
     startPresenceListener();
     // Safety net: remove the skeleton loader after 5 s if no messages arrive

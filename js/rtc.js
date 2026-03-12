@@ -209,6 +209,35 @@ window.client.on("volume-indicator", (volumes) => {
   });
 });
 
+//** Fired when the connection state changes (e.g. due to network issues).
+// Updates the header status text and color to reflect reconnecting/disconnected states,
+// and posts system messages on disconnect/reconnect events.
+// Note: Agora automatically tries to reconnect, so we don't need to do anything here
+// except update the UI to keep the user informed. */
+window.client.on("connection-state-change", (curState, prevState) => {
+  const s = document.getElementById("status");
+  if (!s) return;
+
+  if (curState === "RECONNECTING") {
+    s.innerText   = "⏳ Ponovno povezivanje...";
+    s.style.color = "#fbbf24";
+  }
+
+  if (curState === "DISCONNECTED" && prevState === "RECONNECTING") {
+    s.innerText   = "Veza prekinuta";
+    s.style.color = "#f87171";
+    if (window.appendMessage)
+      window.appendMessage("Sistem", "Veza je prekinuta.", "#f87171");
+  }
+
+  if (curState === "CONNECTED" && prevState === "RECONNECTING") {
+    s.innerText   = isMuted ? "Mutiran 🤐" : "Povezan • Live";
+    s.style.color = isMuted ? "#f87171"    : "#4ade80";
+    if (window.appendMessage)
+      window.appendMessage("Sistem", "Veza je obnovljena. ✅", "#4ade80");
+  }
+});
+
 // ============================================================
 // JOIN
 // Acquires mic, publishes audio, and updates the UI to "connected" state

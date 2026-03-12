@@ -44,11 +44,8 @@ if (bgVideo && bgVideo.paused) {
 
   const playOnInteraction = () => {
     bgVideo.play()
-      .then(() => {
-        console.log("Video started successfully!");
-      })
       .catch((err) => {
-        console.warn("Play failed:", err);
+        console.warn("bg video play failed:", err);
       });
   };
 
