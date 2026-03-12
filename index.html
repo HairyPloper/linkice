@@ -305,9 +305,9 @@
       firebase.initializeApp(firebaseConfig);
 
       // Global channel name used by Agora and Firebase
-      const roomParam = new URLSearchParams(window.location.search).get("room");
-      window.CHANNEL = roomParam
-        ? roomParam.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "Linkice"
+      const spaceParam = new URLSearchParams(window.location.search).get("space");
+      window.CHANNEL = spaceParam
+        ? spaceParam.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "Linkice"
         : "Linkice";
       const isDesktop = !/iPhone|iPad|Android/i.test(navigator.userAgent);
 
