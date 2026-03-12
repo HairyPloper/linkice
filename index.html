@@ -299,14 +299,16 @@
     <script>
       // Firebase project config + app init
       const firebaseConfig = {
-        apiKey: "AIzaSyAGtDjLnt2t_fMsIZJkGcH-Az-JhoXePD0",
-        databaseURL:
-          "https://voice-room-web-default-rtdb.europe-west1.firebasedatabase.app",
+         apiKey: "AIzaSyAWPaFmiGEEeG2XfgQUCQLMa5nt7eaZ3Kk",
+         databaseURL: "https://voice-room-web1-default-rtdb.europe-west1.firebasedatabase.app",
       };
       firebase.initializeApp(firebaseConfig);
 
       // Global channel name used by Agora and Firebase
-      window.CHANNEL = "Linkice";
+      const roomParam = new URLSearchParams(window.location.search).get("room");
+      window.CHANNEL = roomParam
+        ? roomParam.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "Linkice"
+        : "Linkice";
       const isDesktop = !/iPhone|iPad|Android/i.test(navigator.userAgent);
 
       // Slash-command definitions consumed by the autocomplete menu

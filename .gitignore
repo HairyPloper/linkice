@@ -8,3 +8,4 @@ build/
 __pycache__/
 .vscode/
 Thumbs.db
+firebaseConfig.txt
