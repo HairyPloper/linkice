@@ -1254,15 +1254,6 @@ function handleCommand(text) {
       if (newNick) {
         window.myDisplayName = newNick;
         localStorage.setItem("savedUsername", newNick);
-
-        // Update presence so other users see the new name immediately
-        //TODO: nobody is listening with on() so it does nothing
-        // if (window.client?.uid) {
-        //   firebase.database()
-        //     .ref(`presence/${window.CHANNEL}/${window.client.uid}/displayName`)
-        //     .set(newNick);
-        // }
-
         // Update own card in the grid
         const nameEl = document.querySelector(`#user-${window.client?.uid} .username`);
         if (nameEl) nameEl.textContent = `${newNick} (Ti)`;
@@ -1280,6 +1271,19 @@ function handleCommand(text) {
         color: "#fbbf24",
       });
       return true;
+    case "/space":
+      const spaceArg = args[1];
+      if (!spaceArg) {
+        window.appendMessage("Sistem", "Format: /space {naziv-prostora}", "#ef4444");
+        return true;
+      }
+      const spaceName = spaceArg.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+      if (!spaceName) {
+        window.appendMessage("Sistem", "Naziv prostora sadrži nedozvoljene karaktere.", "#ef4444");
+        return true;
+      }
+      window.location.href = `?space=${spaceName}&name=${encodeURIComponent(window.myDisplayName)}`;
+      return true;  
     case "/crtkica":
       if (/iPhone|iPad|Android/i.test(navigator.userAgent)) {
         window.appendMessage("Sistem", "Crtkica nije dostupna na mobilnom uređaju.", "#ef4444");
@@ -1363,6 +1367,7 @@ function handleCommand(text) {
             <code style="color: #fbbf24;text-align: left;">/poll P, O1, O2</code>  <span>Anketa</span>
             <code style="color: #fbbf24;text-align: left;">/roll 100</code>         <span>Kockica</span>
             <code style="color: #fbbf24;text-align: left;">/clear</code>            <span>Očisti čet</span>
+            <code style="color: #fbbf24;text-align: left;">/space Naziv</code>       <span>Promeni prostor</span>
             <code style="color: #fbbf24;text-align: left;">/ping</code>             <span>Ping test Agora</span>
             <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
             ${isDesktop ? `<code style="color: #fbbf24;text-align: left;">/crtkica</code> <span>Otvori/zatvori crtkicu</span>` : ""}
