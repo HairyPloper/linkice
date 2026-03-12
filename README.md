@@ -1,6 +1,6 @@
 # Linkice
 
-A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanilla JavaScript. No accounts, no installs — open a link and talk.
+A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanilla JavaScript. No accounts, no installs — open a link and talk. Create separate rooms instantly with a URL parameter.
 
 ---
 
@@ -8,6 +8,7 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 
 - 🎙️ **Voice calls** — join/leave a persistent room with mic mute, per-user volume sliders, and speaking indicators
 - 💬 **Persistent chat** — messages stored in Firebase, last 50 loaded on join. Supports images, video, audio, YouTube, Spotify, and file embeds automatically from URLs
+- 🏠 **Multiple rooms** — each `?room=` URL parameter creates a fully isolated room with its own voice channel, chat history, whiteboard, and presence. Share a link like `yoursite.com?room=gaming` to invite someone into a specific room
 - 🖥️ **Screen sharing** — 1080p/30fps with optional system audio capture
 - 🎨 **Shared whiteboard** — real-time collaborative canvas with drawing tools and eraser, synced via Firebase
 - 🎮 **Word guessing game** — drawer picks a word, others guess via chat. 60-second timer, confetti on correct guess
@@ -36,10 +37,22 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 ## URL parameters
 
 ```
-?name=HairyPloper       sets your display name for the session
+?name=HairyPloper                   sets your display name for the session
+?room=friday-night                  joins a specific room
+?room=friday-night&name=HairyPloper       both at once
 ```
 
-Name is saved to `localStorage` so it persists on reload. If no name is set, a random `Gost_XXXX` is assigned.
+**Name** is saved to `localStorage` so it persists on reload. If no name is set, a random `Gost_XXXX` is assigned.
+
+**Room** isolates everything — voice channel, chat, whiteboard, and presence are all scoped per room. If no `?room=` is provided, everyone lands in the default room. Room names accept letters, numbers, dashes and underscores only (`a-z A-Z 0-9 - _`). Serbian diacritics and spaces are stripped automatically, so stick to ASCII names.
+
+```
+✅  ?room=gaming
+✅  ?room=friday-night
+✅  ?room=marko_and_friends
+❌  ?room=petak veče       (space stripped → falls back to default)
+❌  ?room=cet123           (this works, diacritics must be avoided)
+```
 
 ---
 
