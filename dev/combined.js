@@ -1923,6 +1923,7 @@ function initWhiteboard() {
   const wordBtn     = document.getElementById("wb-word");
   const wordDisplay = document.getElementById("wb-current-word");
   const stopBtn     = document.getElementById("wb-stop");
+  const wbCursor = document.getElementById("wb-cursor");
 
   const ctx = canvas.getContext("2d");
 
@@ -2162,6 +2163,14 @@ function initWhiteboard() {
   };
 
   canvas.onmousemove = (e) => {
+    // cursor circle
+    wbCursor.style.display = "block";
+    wbCursor.style.width   = currentSize + "px";
+    wbCursor.style.height  = currentSize + "px";
+    wbCursor.style.left    = e.clientX + "px";
+    wbCursor.style.top     = e.clientY + "px";
+    wbCursor.style.borderColor = isEraser ? "rgb(255, 255, 255)" : currentColor;
+
     if (!drawing) return;
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (canvas.width  / rect.width);
@@ -2185,7 +2194,13 @@ function initWhiteboard() {
   };
 
   canvas.onmouseup    = () => { drawing = false; };
-  canvas.onmouseleave = () => { drawing = false; };
+  canvas.onmouseleave = () => { 
+    drawing = false;
+    wbCursor.style.display = "none";
+    canvas.style.cursor = "default";
+   };
+  canvas.onmouseenter = () => { canvas.style.cursor = "none"; };
+
 
   // ============================================================
   // DRAW LINE HELPER
