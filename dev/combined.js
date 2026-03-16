@@ -758,7 +758,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     // Auto-remove presence if connection drops unexpectedly
     firebase.database()
       .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
-      .onDisconnect().remove();
+      // .onDisconnect().remove();
       
     if (window.appendMessage)
       window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#fbbf24");
@@ -1445,32 +1445,33 @@ function startChat() {
       }
       return;
     }
+    // Check if the message is a guess in an active whiteboard game
     if (data.username !== "Sistem") {
-      firebase.database()
-        .ref(`whiteboard-game/${window.CHANNEL}`)
-        .once("value", (snap) => {
-          const game = snap.val();
-          if (!game || !game.active) return;
-          if ((data.username || "") === game.drawer) return;
-          // game word guessed correctly — end the game and announce the winner
-          if ((data.text || "").toLowerCase().trim() === game.word.toLowerCase()) {
-            firebase.database()
-              .ref(`whiteboard-game/${window.CHANNEL}`)
-              .remove();
-            clearInterval(window.timerInterval);
-            window.chatRef.push({
-              username:  "Sistem",
-              text:      `🎉 ${data.username} pogodio reč: ${game.word}!`,
-              color:     "#fbbf24",
-              timestamp: Date.now(),
-            });
-            if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
-          }
+      const gameRef = firebase.database().ref(`whiteboard-game/${window.CHANNEL}`);
+
+      gameRef.transaction((game) => {
+        // Transaction runs atomically — only one client wins the race
+        if (!game || !game.active) return;
+        if ((data.username || "") === game.drawer) return;
+        if ((data.text || "").toLowerCase().trim() !== game.word.toLowerCase()) return;
+        return { ...game, active: false };
+      }, (error, committed, snapshot) => {
+        if (!committed) return;
+        const game = snapshot.val();
+        clearInterval(window.timerInterval);
+        window.chatRef.push({
+          username:  "Sistem",
+          text:      `🎉 ${data.username} pogodio reč: ${game.word}!`,
+          color:     "#fbbf24",
+          timestamp: Date.now(),
         });
+        gameRef.remove();
+        if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
+      });
     }
-    // Standard messages and polls
-    window.appendMessage(data.username, data.text, data.color || "#805ff5", key, data);
-  });
+        // Standard messages and polls
+        window.appendMessage(data.username, data.text, data.color || "#805ff5", key, data);
+      });
 
   // Listen for updates to existing messages (used for live poll vote counts)
   window.chatRef.on("child_changed", (snapshot) => {
