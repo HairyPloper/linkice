@@ -284,15 +284,16 @@
       </div>
       <div id="whiteboard-toolbar">
         <input type="color" id="wb-color" value="#ffffff" title="Boja">
-        <input type="range" id="wb-size" min="1" max="20" value="3" title="Veličina">
+        <input type="range" id="wb-size" min="1" max="20" value="3" autocomplete="off" title="Veličina">
         <button id="wb-eraser" class="wb-btn">⬜ Gumica</button>
         <button id="wb-clear" class="wb-btn">🗑️ Obriši sve</button>
         <button id="wb-word" class="wb-btn">🎮 Stižem</button>
-        <button id="wb-stop" class="wb-btn" style="display:none;">⏹ Završi igru</button>
+        <button id="wb-stop" class="wb-btn" style="display:none;">🏁 Završi igru</button>
         <span id="wb-current-word" style="color:#fbbf24; font-size:0.85rem; margin-left:5px;"></span>
       </div>
         <canvas id="whiteboard-canvas"></canvas>
         </div>
+      <div id="wb-cursor"></div>  
     </div>
 
     <!-- ============================================================

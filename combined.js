@@ -1923,6 +1923,7 @@ function initWhiteboard() {
   const wordBtn     = document.getElementById("wb-word");
   const wordDisplay = document.getElementById("wb-current-word");
   const stopBtn     = document.getElementById("wb-stop");
+  const wbCursor = document.getElementById("wb-cursor");
 
   const ctx = canvas.getContext("2d");
 
@@ -1970,7 +1971,7 @@ function initWhiteboard() {
     "petak","ponedeljak","familija","doktor","tiba","linija","pomfrit","gospodarica","osvezenje","majonez",
     "boks","umor","fabrika","sizofrenija","ruke","gas","spavanje","makarone","gram","pirat",
     "pepko","inkubator","dusek","krompiri","smi","federacija","drugostepena","prekovremeno","brisanje","pivo",
-    "dremikca","ispravljanje","palacinka","maskembal","planinarenje","politika","bazen","fotelja","prosiptati","slagalica"
+    "dremikca","ispravljanje","palacinka","maskembal","planinarenje","politika","bazen","fotelja","prosipati","slagalica"
   ];
 
   // ============================================================
@@ -2029,6 +2030,7 @@ function initWhiteboard() {
     const word = WORDS[Math.floor(Math.random() * WORDS.length)];
     myWord = word;
     wordDisplay.textContent = `✏️ Tvoja reč: ${word}`;
+    wordBtn.classList.toggle('is-disabled', true);
 
     gameRef.set({
       word:   word,
@@ -2053,6 +2055,7 @@ function initWhiteboard() {
     clearInterval(timerInterval);
     gameRef.remove();
     wordDisplay.textContent = "";
+    wordBtn.classList.toggle('is-disabled', false);
     myWord = null;
     stopBtn.style.display = "none";
     window.chatRef.push({
@@ -2102,6 +2105,7 @@ function initWhiteboard() {
     const secondsLeft = Math.ceil((endsAt - Date.now()) / 1000);
     if (secondsLeft <= 0) {
       clearInterval(timerInterval);
+      wordBtn.classList.toggle('is-disabled', false);
       // Time's up — reveal word and end game
       gameRef.once("value", (snap) => {
         const data = snap.val();
@@ -2159,6 +2163,14 @@ function initWhiteboard() {
   };
 
   canvas.onmousemove = (e) => {
+    // cursor circle
+    wbCursor.style.display = "block";
+    wbCursor.style.width   = currentSize + "px";
+    wbCursor.style.height  = currentSize + "px";
+    wbCursor.style.left    = e.clientX + "px";
+    wbCursor.style.top     = e.clientY + "px";
+    wbCursor.style.borderColor = isEraser ? "rgb(255, 255, 255)" : currentColor;
+
     if (!drawing) return;
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (canvas.width  / rect.width);
@@ -2182,7 +2194,13 @@ function initWhiteboard() {
   };
 
   canvas.onmouseup    = () => { drawing = false; };
-  canvas.onmouseleave = () => { drawing = false; };
+  canvas.onmouseleave = () => { 
+    drawing = false;
+    wbCursor.style.display = "none";
+    canvas.style.cursor = "default";
+   };
+  canvas.onmouseenter = () => { canvas.style.cursor = "none"; };
+
 
   // ============================================================
   // DRAW LINE HELPER

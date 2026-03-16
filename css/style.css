@@ -369,6 +369,14 @@ h2 {
   gap: 8px;
 }
 
+/* Generic utility class */
+.is-disabled {
+  pointer-events: none;     
+  cursor: not-allowed;      
+  opacity: 0.5;             
+  user-select: none;   
+}
+
 /* Join button — primary indigo/violet gradient */
 .join-btn {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
@@ -919,6 +927,10 @@ h2 {
   cursor: zoom-in;
   border-radius: 14px 14px 0 0;
 }
+.media-img:fullscreen {
+  object-fit: contain;
+  cursor: zoom-out;
+}
 
 /* --- Video preview --- */
 .media-video {
@@ -1362,8 +1374,17 @@ h2 {
 #whiteboard-canvas {
   flex: 1;
   border-radius: 0 0 20px 20px;
-  cursor: crosshair;
   width: 100%;
+}
+
+#wb-cursor {
+  position: fixed;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.8);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  display: none;
 }
 
 #wb-current-word {
