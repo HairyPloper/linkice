@@ -73,7 +73,7 @@ function initWhiteboard() {
     "petak","ponedeljak","familija","doktor","tiba","linija","pomfrit","gospodarica","osvezenje","majonez",
     "boks","umor","fabrika","sizofrenija","ruke","gas","spavanje","makarone","gram","pirat",
     "pepko","inkubator","dusek","krompiri","smi","federacija","drugostepena","prekovremeno","brisanje","pivo",
-    "dremikca","ispravljanje","palacinka","maskembal","planinarenje","politika","bazen","fotelja","prosiptati","slagalica"
+    "dremikca","ispravljanje","palacinka","maskembal","planinarenje","politika","bazen","fotelja","prosipati","slagalica"
   ];
 
   // ============================================================

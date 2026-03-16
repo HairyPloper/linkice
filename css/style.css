@@ -919,6 +919,10 @@ h2 {
   cursor: zoom-in;
   border-radius: 14px 14px 0 0;
 }
+.media-img:fullscreen {
+  object-fit: contain;
+  cursor: zoom-out;
+}
 
 /* --- Video preview --- */
 .media-video {
