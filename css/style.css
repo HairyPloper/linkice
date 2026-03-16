@@ -369,6 +369,14 @@ h2 {
   gap: 8px;
 }
 
+/* Generic utility class */
+.is-disabled {
+  pointer-events: none;     
+  cursor: not-allowed;      
+  opacity: 0.5;             
+  user-select: none;   
+}
+
 /* Join button — primary indigo/violet gradient */
 .join-btn {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);

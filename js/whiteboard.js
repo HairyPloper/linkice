@@ -132,6 +132,7 @@ function initWhiteboard() {
     const word = WORDS[Math.floor(Math.random() * WORDS.length)];
     myWord = word;
     wordDisplay.textContent = `✏️ Tvoja reč: ${word}`;
+    wordBtn.classList.toggle('is-disabled', true);
 
     gameRef.set({
       word:   word,
@@ -156,6 +157,7 @@ function initWhiteboard() {
     clearInterval(timerInterval);
     gameRef.remove();
     wordDisplay.textContent = "";
+    wordBtn.classList.toggle('is-disabled', false);
     myWord = null;
     stopBtn.style.display = "none";
     window.chatRef.push({
@@ -205,6 +207,7 @@ function initWhiteboard() {
     const secondsLeft = Math.ceil((endsAt - Date.now()) / 1000);
     if (secondsLeft <= 0) {
       clearInterval(timerInterval);
+      wordBtn.classList.toggle('is-disabled', false);
       // Time's up — reveal word and end game
       gameRef.once("value", (snap) => {
         const data = snap.val();
