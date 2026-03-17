@@ -1448,17 +1448,18 @@ function startChat() {
     // Check if the message is a guess in an active whiteboard game
     if (data.username !== "Sistem") {
       const gameRef = firebase.database().ref(`whiteboard-game/${window.CHANNEL}`);
-
+      // Transaction runs atomically — only one client wins the race
       gameRef.transaction((game) => {
-        // Transaction runs atomically — only one client wins the race
+        // If there's no active game, or the guess is from the drawer, or it's incorrect, abort the transaction
         if (!game || !game.active) return;
         if ((data.username || "") === game.drawer) return;
         if ((data.text || "").toLowerCase().trim() !== game.word.toLowerCase()) return;
+        // update the game state to mark it as inactive (ended)
         return { ...game, active: false };
       }, (error, committed, snapshot) => {
         if (!committed) return;
         const game = snapshot.val();
-        clearInterval(window.timerInterval);
+        // Announce the winner in chat and clean up the game state
         window.chatRef.push({
           username:  "Sistem",
           text:      `🎉 ${data.username} pogodio reč: ${game.word}!`,
@@ -1466,6 +1467,8 @@ function startChat() {
           timestamp: Date.now(),
         });
         gameRef.remove();
+        clearInterval(window.timerInterval);
+        if (window.resetWordButton) window.resetWordButton();
         if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
       });
     }
@@ -2302,4 +2305,12 @@ function initWhiteboard() {
   // ============================================================
   window.resizeWhiteboardCanvas = resizeCanvas;
   window.loadWhiteboardSnapshot = loadSnapshot;
+  // helper function to re-enable the "Get Word" button
+  window.resetWordButton = () => {
+    const wordBtn = document.getElementById("wb-word");
+    if (wordBtn) {
+      wordBtn.disabled = false;
+      wordBtn.classList.remove("is-disabled");
+    }
+  };
 }
