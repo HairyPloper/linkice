@@ -552,6 +552,7 @@ function startChat() {
         if ((message.text || "").toLowerCase().trim() !== game.word.toLowerCase()) return;
         // show to all users a confetti celebration for the correct guess
         if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
+        // Re-enable the "Get Word" button for the next game
         if (window.resetWordButton) window.resetWordButton();
         // update the game state to mark it as inactive (ended)
         return { ...game, active: false };
