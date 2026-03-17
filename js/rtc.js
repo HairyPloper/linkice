@@ -295,7 +295,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     // Auto-remove presence if connection drops unexpectedly
     firebase.database()
       .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
-      // .onDisconnect().remove();
+      .onDisconnect().remove();
       
     if (window.appendMessage)
       window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#fbbf24");
