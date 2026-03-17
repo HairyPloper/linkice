@@ -1429,56 +1429,61 @@ function startChat() {
     const skeleton = document.getElementById("chat-skeleton-loader");
     if (skeleton) skeleton.remove();
 
-    const data = snapshot.val();
-    const key  = snapshot.key;
+    const message = snapshot.val();
+    const message_key  = snapshot.key;
 
     // Private messages are only shown to the sender and the named recipient
-    if (data.type === "private") {
-      const isMeSender = (data.username || "").toLowerCase() === (window.myDisplayName  || "").toLowerCase();
-      const isMeTarget = (data.to || "").toLowerCase()       === (window.myDisplayName  || "").toLowerCase();
+    if (message.type === "private") {
+      const isMeSender = (message.username || "").toLowerCase() === (window.myDisplayName  || "").toLowerCase();
+      const isMeTarget = (message.to || "").toLowerCase()       === (window.myDisplayName  || "").toLowerCase();
 
       if (isMeSender || isMeTarget) {
         const prefix = isMeSender
-          ? `[privatna za ${escapeHtml(data.to || "")}]`
-          : `[Privatna od ${escapeHtml(data.username || "")}]`;
-        window.appendMessage(prefix, data.text, "#d1d5db", key, data);
+          ? `[privatna za ${escapeHtml(message.to || "")}]`
+          : `[Privatna od ${escapeHtml(message.username || "")}]`;
+        window.appendMessage(prefix, message.text, "#d1d5db", message_key, message);
       }
       return;
     }
-    if (data.username !== "Sistem") {
-      firebase.database()
-        .ref(`whiteboard-game/${window.CHANNEL}`)
-        .once("value", (snap) => {
-          const game = snap.val();
-          if (!game || !game.active) return;
-          if ((data.username || "") === game.drawer) return;
-          // game word guessed correctly — end the game and announce the winner
-          if ((data.text || "").toLowerCase().trim() === game.word.toLowerCase()) {
-            firebase.database()
-              .ref(`whiteboard-game/${window.CHANNEL}`)
-              .remove();
-            clearInterval(window.timerInterval);
-            window.chatRef.push({
-              username:  "Sistem",
-              text:      `🎉 ${data.username} pogodio reč: ${game.word}!`,
-              color:     "#fbbf24",
-              timestamp: Date.now(),
-            });
-            if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
-          }
+    // Check if the message is a guess in an active whiteboard game
+    if (message.username !== "Sistem") {
+      const gameRef = firebase.database().ref(`whiteboard-game/${window.CHANNEL}`);
+      // Transaction runs atomically — only one client wins the race
+      gameRef.transaction((game) => {
+        // If there's no active game, or the guess is from the drawer, or it's incorrect, abort the transaction
+        if (!game || !game.active) return;
+        if ((message.username || "") === game.drawer) return;
+        if ((message.text || "").toLowerCase().trim() !== game.word.toLowerCase()) return;
+        // show to all users a confetti celebration for the correct guess
+        if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
+        if (window.resetWordButton) window.resetWordButton();
+        // update the game state to mark it as inactive (ended)
+        return { ...game, active: false };
+      }, (error, committed, snapshot) => {
+        if (!committed) return;
+        const game = snapshot.val();
+        // Announce the winner in chat and clean up the game state
+        window.chatRef.push({
+          username:  "Sistem",
+          text:      `🎉 ${message.username} pogodio reč: ${game.word}!`,
+          color:     "#fbbf24",
+          timestamp: Date.now(),
         });
+        gameRef.remove();
+        clearInterval(window.timerInterval);
+      });
     }
-    // Standard messages and polls
-    window.appendMessage(data.username, data.text, data.color || "#805ff5", key, data);
-  });
+        // Standard messages and polls
+        window.appendMessage(message.username, message.text, message.color || "#805ff5", message_key, message);
+      });
 
   // Listen for updates to existing messages (used for live poll vote counts)
   window.chatRef.on("child_changed", (snapshot) => {
-    const data = snapshot.val();
-    if (data && data.type === "poll" && Array.isArray(data.options)) {
-      data.options.forEach((opt) => {
-        const el = document.getElementById(`count-${snapshot.key}-${encodeURIComponent(opt)}`);
-        if (el) el.innerText = data.votes && (data.votes[opt] || 0);
+    const message = snapshot.val();
+    if (message && message.type === "poll" && Array.isArray(message.options)) {
+      message.options.forEach((opt) => {
+        const el = document.getElementById(`count-${message_key}-${encodeURIComponent(opt)}`);
+        if (el) el.innerText = message.votes && (message.votes[opt] || 0);
       });
     }
   });
@@ -1487,11 +1492,11 @@ function startChat() {
   firebase.database()
     .ref(`presence/${window.CHANNEL}`)
     .on("child_changed", (snapshot) => {
-      const data = snapshot.val();
+      const message = snapshot.val();
       const uid  = snapshot.key;
-      if (!data) return;
+      if (!message) return;
       const avatar = document.getElementById(`avatar-${uid}`);
-      if (avatar) avatar.classList.toggle("muted", data.muted === true);
+      if (avatar) avatar.classList.toggle("muted", message.muted === true);
     });
 }
 
@@ -2301,4 +2306,11 @@ function initWhiteboard() {
   // ============================================================
   window.resizeWhiteboardCanvas = resizeCanvas;
   window.loadWhiteboardSnapshot = loadSnapshot;
+  // helper function to re-enable the "Get Word" button
+  window.resetWordButton = () => {
+    const wordBtn = document.getElementById("wb-word");
+    if (wordBtn) {
+      wordBtn.classList.remove("is-disabled");
+    }
+  };
 }
