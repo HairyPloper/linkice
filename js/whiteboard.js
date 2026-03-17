@@ -408,7 +408,6 @@ function initWhiteboard() {
   window.resetWordButton = () => {
     const wordBtn = document.getElementById("wb-word");
     if (wordBtn) {
-      wordBtn.disabled = false;
       wordBtn.classList.remove("is-disabled");
     }
   };
