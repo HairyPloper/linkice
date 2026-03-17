@@ -383,10 +383,14 @@ async function leaveChannel() {
     localTracks.audioTrack = null;
   }
 
-  // --- 4. AGORA CLIENT ---
-  firebase.database()
-  .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
-  .remove();
+  // --- 4. AGORA CLIENT and PRESENCE ---
+  firebase.database().ref(".info/connected").off();
+  // remove presence and disable connection listeners
+  const myPath = `presence/${window.CHANNEL}/${window.client.uid}`;
+  await firebase.database().ref(myPath).remove();
+  firebase.database().ref(myPath).onDisconnect().cancel();
+
+  // Agora leave
   await window.client.leave();
 
   // --- 5. RESET LOCAL STATE ---
