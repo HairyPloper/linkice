@@ -404,4 +404,11 @@ function initWhiteboard() {
   // ============================================================
   window.resizeWhiteboardCanvas = resizeCanvas;
   window.loadWhiteboardSnapshot = loadSnapshot;
+  // helper function to re-enable the "Get Word" button
+  window.resetWordButton = () => {
+    const wordBtn = document.getElementById("wb-word");
+    if (wordBtn) {
+      wordBtn.classList.remove("is-disabled");
+    }
+  };
 }
