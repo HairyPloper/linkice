@@ -286,16 +286,45 @@ if (joinBtn) joinBtn.onclick = async () => {
     await window.client.publish(localTracks.audioTrack);
 
     // --- 4. UPDATE PRESENCE IN FIREBASE ---
-    // Write presence BEFORE anything else so remote users who receive
-    // user-joined/user-published can read our displayName immediately.
     window.uidNameMap[window.client.uid] = window.myDisplayName;
-    await firebase.database()
-      .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
-      .set({ displayName: window.myDisplayName, icon: window.myIcon });
-    // Auto-remove presence if connection drops unexpectedly
-    firebase.database()
-      .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
-      .onDisconnect().remove();
+    const myPresenceRef = firebase.database().ref(`presence/${window.CHANNEL}/${window.client.uid}`);
+
+    // Define the presence setup logic so we can reuse it on reconnect
+    const updatePresence = () => {
+      myPresenceRef.set({ 
+        displayName: window.myDisplayName, 
+        icon: window.myIcon 
+      });
+      myPresenceRef.onDisconnect().remove();
+    };
+
+    updatePresence();
+    let isFirstConnect = true;
+    let reconnectTimeout = null;
+    // The real-time disconnect/reconnect callback
+    firebase.database().ref(".info/connected").on("value", (snap) => {
+      const isConnected = snap.val();
+      if (isConnected === false) {
+        // callback on disconnect (e.g. network loss)
+        window.appendMessage("Sistem", "Konekcija firebase prekinuta. Pokušavam rekonekciju...", "#ef4444");
+        // Clear any existing timeout to avoid multiple triggers
+        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(() => {
+          firebase.database().goOnline();
+        }, 5000);
+
+      } else {
+        // callback on reconnect (e.g. network restored)
+        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+        if (!isFirstConnect){
+          window.appendMessage("Sistem", "Konekcija firebase ponovo uspostavljena.", "#4ade80");
+          updatePresence();
+        }else{
+          // Avoid showing "connection restored" message on the initial join
+          isFirstConnect = false;
+        }
+      }
+    });
       
     if (window.appendMessage)
       window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#fbbf24");
