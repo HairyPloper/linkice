@@ -59,6 +59,25 @@ async function resolveRemoteName(uid) {
   return { name: fallback, icon: window.animals[Math.floor(Math.random() * window.animals.length)] };
 }
 
+function startLocalVolumeMonitor(localAudioTrack) {
+  const stream = new MediaStream([localAudioTrack.getMediaStreamTrack()]);
+  const ctx = new AudioContext();
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 512;
+  source.connect(analyser);
+
+  const data = new Uint8Array(analyser.frequencyBinCount);
+
+  (function tick() {
+    analyser.getByteFrequencyData(data);
+    const avg = data.reduce((a, b) => a + b, 0) / data.length;
+    document.getElementById(`avatar-${window.client.uid}`)
+      ?.classList.toggle("speaking", avg > 8);
+    requestAnimationFrame(tick);
+  })();
+}
+
 // ============================================================
 // SCREEN SHARE
 // Toggle screen sharing on/off via the screen-btn button
@@ -203,17 +222,28 @@ window.client.on("user-joined", async (user) => {
  * Volume indicator — fires every 2 s with audio levels for all active speakers.
  * Adds/removes the .speaking class on avatars to drive the neon pulse animation.
  */
-window.client.on("volume-indicator", (volumes) => {
-  // Clear all current speaking highlights before re-applying
-  document.querySelectorAll(".avatar.speaking").forEach((el) =>
-    el.classList.remove("speaking")
-  );
+const speakingTimers = new Map();
+const SPEAKING_LINGER_MS = 400;
 
+window.client.on("volume-indicator", (volumes) => {
   volumes.forEach((vol) => {
-    if (vol.level > 5) { // Threshold filters out background noise
-      // uid === 0 means the local user in the volume event
-      const id = vol.uid === 0 ? window.client.uid : vol.uid;
-      document.getElementById(`avatar-${id}`)?.classList.add("speaking");
+    const id = vol.uid === 0 ? window.client.uid : vol.uid;
+    const avatar = document.getElementById(`avatar-${id}`);
+    if (!avatar) return;
+
+    if (vol.level > 5) {
+      avatar.classList.add("speaking");
+      if (speakingTimers.has(id)) {
+        clearTimeout(speakingTimers.get(id));
+        speakingTimers.delete(id);
+      }
+    } else {
+      if (!speakingTimers.has(id)) {
+        speakingTimers.set(id, setTimeout(() => {
+          avatar.classList.remove("speaking");
+          speakingTimers.delete(id);
+        }, SPEAKING_LINGER_MS));
+      }
     }
   });
 });
@@ -279,10 +309,11 @@ if (joinBtn) joinBtn.onclick = async () => {
 
     // --- 2. JOIN AGORA CHANNEL ---
     await window.client.join(window.APP_ID, window.CHANNEL, null, window.myAgoraUID);
-    window.client.enableAudioVolumeIndicator();
+    client.enableAudioVolumeIndicator(200, 3);
 
     // --- 3. PUBLISH AUDIO TRACK ---
     localTracks.audioTrack = audioTrack;
+    startLocalVolumeMonitor(localTracks.audioTrack);
     await window.client.publish(localTracks.audioTrack);
 
     // --- 4. UPDATE PRESENCE IN FIREBASE ---

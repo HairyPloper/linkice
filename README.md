@@ -7,7 +7,7 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 ## What it does
 
 - 🎙️ **Voice calls** — join/leave a persistent space with mic mute, per-user volume sliders, and speaking indicators
-- 💬 **Persistent chat** — messages stored in Firebase, last 50 loaded on join. Supports images, video, audio, YouTube, Spotify, and file embeds automatically from URLs
+- 💬 **Persistent chat** — messages stored in Firebase. Supports images, video, audio, YouTube, Spotify, and file embeds automatically from URLs
 - 🏠 **Multiple spaces** — each `?space=` URL parameter creates a fully isolated space with its own voice channel, chat history, whiteboard, and presence. Share a link like `yoursite.com?space=gaming` to invite someone into a specific space
 - 🖥️ **Screen sharing** — 1080p/30fps with optional system audio capture
 - 🎨 **Shared whiteboard** — real-time collaborative canvas with drawing tools and eraser, synced via Firebase
