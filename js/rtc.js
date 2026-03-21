@@ -498,6 +498,10 @@ window.toggleMute = async () => {
   // setEnabled(false) mutes without destroying the track
   await localTracks.audioTrack.setEnabled(!isMuted);
 
+  if (!isMuted) {
+    startLocalVolumeMonitor(localTracks.audioTrack); // ← restart fresh
+  }
+
   // Update mute state in Firebase so remote users can see it in their UI
   firebase.database()
   .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
