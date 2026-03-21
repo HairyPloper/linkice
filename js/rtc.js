@@ -65,15 +65,35 @@ function startLocalVolumeMonitor(localAudioTrack) {
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.3;
   source.connect(analyser);
 
   const data = new Uint8Array(analyser.frequencyBinCount);
+  let silenceTimer = null;
+  const DEACTIVATE_DELAY = 600;
 
   (function tick() {
     analyser.getByteFrequencyData(data);
     const avg = data.reduce((a, b) => a + b, 0) / data.length;
-    document.getElementById(`avatar-${window.client.uid}`)
-      ?.classList.toggle("speaking", avg > 8);
+    const avatar = document.getElementById(`avatar-${window.client.uid}`);
+    if (!avatar) { requestAnimationFrame(tick); return; }
+
+    if (avg > 8) {
+      avatar.classList.add("speaking");
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+      }
+    } else {
+      // Silence — only deactivate after holdoff
+      if (avatar.classList.contains("speaking") && !silenceTimer) {
+        silenceTimer = setTimeout(() => {
+          avatar.classList.remove("speaking");
+          silenceTimer = null;
+        }, DEACTIVATE_DELAY);
+      }
+    }
+
     requestAnimationFrame(tick);
   })();
 }
