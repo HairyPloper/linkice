@@ -65,15 +65,35 @@ function startLocalVolumeMonitor(localAudioTrack) {
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.3;
   source.connect(analyser);
 
   const data = new Uint8Array(analyser.frequencyBinCount);
+  let silenceTimer = null;
+  const DEACTIVATE_DELAY = 600;
 
   (function tick() {
     analyser.getByteFrequencyData(data);
     const avg = data.reduce((a, b) => a + b, 0) / data.length;
-    document.getElementById(`avatar-${window.client.uid}`)
-      ?.classList.toggle("speaking", avg > 8);
+    const avatar = document.getElementById(`avatar-${window.client.uid}`);
+    if (!avatar) { requestAnimationFrame(tick); return; }
+
+    if (avg > 8) {
+      avatar.classList.add("speaking");
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+      }
+    } else {
+      // Silence — only deactivate after holdoff
+      if (avatar.classList.contains("speaking") && !silenceTimer) {
+        silenceTimer = setTimeout(() => {
+          avatar.classList.remove("speaking");
+          silenceTimer = null;
+        }, DEACTIVATE_DELAY);
+      }
+    }
+
     requestAnimationFrame(tick);
   })();
 }
@@ -273,7 +293,8 @@ window.client.on("connection-state-change", (curState, prevState) => {
     s.innerText   = isMuted ? "Mutiran 🤐" : "Povezan • Live";
     s.style.color = isMuted ? "#f87171"    : "#4ade80";
     if (window.appendMessage)
-      window.appendMessage("Sistem", "Veza je obnovljena. ✅", "#4ade80");
+      console.log("Veza obnovljena, postavljanje statusa...");
+      // window.appendMessage("Sistem", "Veza je obnovljena. ✅", "#4ade80");
   }
 });
 
@@ -337,7 +358,8 @@ if (joinBtn) joinBtn.onclick = async () => {
       const isConnected = snap.val();
       if (isConnected === false) {
         // callback on disconnect (e.g. network loss)
-        window.appendMessage("Sistem", "Konekcija firebase prekinuta. Pokušavam rekonekciju...", "#ef4444");
+        console.warn("Firebase konekcija prekinuta. Pokušavam rekonekciju...");
+        //window.appendMessage("Sistem", "Konekcija firebase prekinuta. Pokušavam rekonekciju...", "#ef4444");
         // Clear any existing timeout to avoid multiple triggers
         if (reconnectTimeout) clearTimeout(reconnectTimeout);
         reconnectTimeout = setTimeout(() => {
@@ -348,7 +370,8 @@ if (joinBtn) joinBtn.onclick = async () => {
         // callback on reconnect (e.g. network restored)
         if (reconnectTimeout) clearTimeout(reconnectTimeout);
         if (!isFirstConnect){
-          window.appendMessage("Sistem", "Konekcija firebase ponovo uspostavljena.", "#4ade80");
+          console.log("Firebase konekcija obnovljena...");
+          //window.appendMessage("Sistem", "Konekcija firebase ponovo uspostavljena.", "#4ade80");
           updatePresence();
         }else{
           // Avoid showing "connection restored" message on the initial join
@@ -477,6 +500,10 @@ window.toggleMute = async () => {
 
   // setEnabled(false) mutes without destroying the track
   await localTracks.audioTrack.setEnabled(!isMuted);
+
+  if (!isMuted) {
+    startLocalVolumeMonitor(localTracks.audioTrack); // ← restart fresh
+  }
 
   // Update mute state in Firebase so remote users can see it in their UI
   firebase.database()
