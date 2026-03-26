@@ -756,7 +756,8 @@ window.client.on("connection-state-change", (curState, prevState) => {
     s.innerText   = isMuted ? "Mutiran 🤐" : "Povezan • Live";
     s.style.color = isMuted ? "#f87171"    : "#4ade80";
     if (window.appendMessage)
-      window.appendMessage("Sistem", "Veza je obnovljena. ✅", "#4ade80");
+      console.log("Veza obnovljena, postavljanje statusa...");
+      // window.appendMessage("Sistem", "Veza je obnovljena. ✅", "#4ade80");
   }
 });
 
@@ -820,7 +821,8 @@ if (joinBtn) joinBtn.onclick = async () => {
       const isConnected = snap.val();
       if (isConnected === false) {
         // callback on disconnect (e.g. network loss)
-        window.appendMessage("Sistem", "Konekcija firebase prekinuta. Pokušavam rekonekciju...", "#ef4444");
+        console.warn("Firebase konekcija prekinuta. Pokušavam rekonekciju...");
+        //window.appendMessage("Sistem", "Konekcija firebase prekinuta. Pokušavam rekonekciju...", "#ef4444");
         // Clear any existing timeout to avoid multiple triggers
         if (reconnectTimeout) clearTimeout(reconnectTimeout);
         reconnectTimeout = setTimeout(() => {
@@ -831,7 +833,8 @@ if (joinBtn) joinBtn.onclick = async () => {
         // callback on reconnect (e.g. network restored)
         if (reconnectTimeout) clearTimeout(reconnectTimeout);
         if (!isFirstConnect){
-          window.appendMessage("Sistem", "Konekcija firebase ponovo uspostavljena.", "#4ade80");
+          console.log("Firebase konekcija obnovljena...");
+          //window.appendMessage("Sistem", "Konekcija firebase ponovo uspostavljena.", "#4ade80");
           updatePresence();
         }else{
           // Avoid showing "connection restored" message on the initial join
