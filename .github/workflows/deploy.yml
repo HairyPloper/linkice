@@ -32,6 +32,7 @@ jobs:
           cp manifest.json dist/manifest.json
           cp -r css dist/css || true
           cp -r src dist/src || true
+          cp sw.js dist/sw.js
 
           echo "Processing: Bundling 7 files..."
           cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js js/whiteboard.js js/notifications.js > dist/combined.js
