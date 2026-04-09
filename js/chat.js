@@ -240,7 +240,7 @@ function formatMediaLinks(url) {
       <div class="media-card media-card--yt">
         <div class="media-yt-wrap">
           <iframe src="https://www.youtube.com/embed/${ytMatch[1]}"
-            class="media-yt" allowfullscreen></iframe>
+            class="media-yt" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
         </div>
         <a href="${url}" target="_blank" class="media-link">▶ YouTube</a>
       </div>`;
@@ -268,7 +268,7 @@ function formatMediaLinks(url) {
           src="https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0"
           width="100%"
           height="${h}"
-          frameborder="0"
+          style="border: 0;"
           allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
           loading="lazy"
           class="media-spotify"
@@ -346,6 +346,11 @@ window.sendMessage = async () => {
     });
     chatInput.value = "";
     chatInput.focus();
+
+    // Trigger a global push notification for firebase notification subscribers (e.g. mobile users who have left the tab)
+    if (window.notificationManager) {
+    window.notificationManager.triggerGlobalPush(window.myDisplayName, text);
+  }
   } catch (err) {
     console.error("Greška pri slanju:", err);
   }
