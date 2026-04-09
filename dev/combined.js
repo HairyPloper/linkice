@@ -2485,7 +2485,7 @@ async registerAndSubscribe() {
    */
   async triggerGlobalPush(username, text) {
     try {
-      await fetch('/api/notify', {
+      await fetch('https://my-proxy-vercel-kappa.vercel.app/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
