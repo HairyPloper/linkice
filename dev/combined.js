@@ -2455,30 +2455,30 @@ class NotificationManager {
    * NEW: Register the Service Worker and subscribe to Push Notifications with FCM
    */
 async registerAndSubscribe() {
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      
-      // 1. Get the address (subscription) from the browser
-      // PASTE YOUR PUBLIC KEY FROM FIREBASE CLOUD MESSAGING HERE
-      const vapidPublicKey = 'YOUR_PUBLIC_KEY_FROM_FIREBASE'; 
-      
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: vapidPublicKey
-      });
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    
+    // Ensure this matches your Firebase Cloud Messaging VAPID key
+    const vapidPublicKey = 'YOUR_ACTUAL_PUBLIC_VAPID_KEY'; 
+    
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: vapidPublicKey
+    });
 
-      // 2. Save this subscription directly to YOUR Firebase Realtime Database
-      // We use JSON.parse/stringify to ensure it's a clean object
-      if (window.myAgoraUID) {
-        const subData = JSON.parse(JSON.stringify(subscription));
-        await firebase.database().ref(`push_subscriptions/${window.myAgoraUID}`).set(subData);
-        console.log('✅ Push address saved to Firebase');
-      }
-      
-    } catch (err) {
-      console.error('❌ Handshake failed:', err);
-    }
+    // Use display name as the key, or a random ID if they haven't picked a name yet
+    const identifier = window.myDisplayName || `user_${Date.now()}`;
+    const subData = JSON.parse(JSON.stringify(subscription));
+
+    // Save to Firebase
+    await firebase.database().ref(`push_subscriptions/${identifier}`).set(subData);
+    
+    console.log(`✅ Push address saved for: ${identifier}`);
+    
+  } catch (err) {
+    console.error('❌ Handshake failed:', err);
   }
+}
 
   /**
    * NEW: Send a request to Vercel to trigger a Push for everyone
@@ -2612,7 +2612,13 @@ window.setupNotificationIntegration = function() {
   if (joinBtn) {
     const originalOnClick = joinBtn.onclick;
     joinBtn.onclick = async function() {
-      if (window.notificationManager) await window.notificationManager.requestPermission();
+      // Give the app a moment to set the name/UI
+      setTimeout(async () => {
+        if (window.notificationManager) {
+          await window.notificationManager.requestPermission();
+        }
+      }, 100);
+
       if (originalOnClick) return originalOnClick.apply(this, arguments);
     };
   }
