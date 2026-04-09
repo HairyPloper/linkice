@@ -1,59 +1,39 @@
-/**
- * sw.js - MUST BE IN ROOT DIRECTORY
- * Service Worker for background operations (Push Notifications & Badging)
- */
+// sw.js - Keep it simple and separate from your main app logic
+self.addEventListener('push', function(event) {
+    let payload = {
+        title: 'Nova poruka',
+        body: 'Neko je poslao poruku na Linkice.'
+    };
 
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
-
-  try {
-    const data = event.data.json();
-    
-    // 1. Handle the App Badge (The red bubble on the icon)
-    // In Service Workers, we use self.navigator
-    if ('setAppBadge' in self.navigator) {
-      const count = parseInt(data.unreadCount, 10) || 1;
-      event.waitUntil(self.navigator.setAppBadge(count));
-    }
-
-    // 2. Handle the Notification Banner
-    if (data.title && data.message) {
-      const options = {
-        body: data.message,
-        icon: '/favicon-v1.png',
-        badge: '/favicon-v1.png', 
-        tag: 'linkice-chat', // New messages replace old ones in the tray
-        renotify: true,      // Vibrate/Sound even if replacing an old one
-        data: {
-          url: '/' // Store the landing page in the notification data
+    if (event.data) {
+        try {
+            // Try to parse JSON from Vercel/Web-Push
+            payload = event.data.json();
+        } catch (e) {
+            // Fallback if the payload is just a string
+            payload.body = event.data.text();
         }
-      };
-
-      event.waitUntil(
-        self.registration.showNotification(data.title, options)
-      );
     }
-  } catch (err) {
-    console.error('Error processing push event:', err);
-  }
+
+    const options = {
+        body: payload.body,
+        icon: 'favicon-v1.png', // Relative to the sw.js location
+        badge: 'favicon-v1.png',
+        vibrate: [100, 50, 100],
+        data: {
+            dateOfArrival: Date.now(),
+            primaryKey: '1'
+        }
+    };
+
+    event.waitUntil(
+        self.registration.showNotification(payload.title, options)
+    );
 });
 
-// Clear badge and open app when clicked
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  // Clear the bubble
-  if ('clearAppBadge' in self.navigator) {
-    event.waitUntil(self.navigator.clearAppBadge());
-  }
-  
-  // Focus existing window or open new one
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (let client of windowClients) {
-        if ('focus' in client) return client.focus();
-      }
-      if (clients.openWindow) return clients.openWindow('/');
-    })
-  );
+self.addEventListener('notificationclick', function(event) {
+    event.notification.close();
+    event.waitUntil(
+        clients.openWindow('/')
+    );
 });
