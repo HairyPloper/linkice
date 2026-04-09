@@ -2,7 +2,8 @@
   "name": "Linkice",
   "short_name": "Linkice",
   "description": "Real-time voice-chat space",
-  "start_url": "/",
+  "start_url": "./", 
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#6366f1",
@@ -26,8 +27,5 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ],
-  "screenshots": [],
-  "categories": ["productivity", "social"],
-  "shortcuts": []
+  ]
 }
