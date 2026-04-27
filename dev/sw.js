@@ -31,9 +31,19 @@ self.addEventListener('push', function(event) {
     );
 });
 
-self.addEventListener('notificationclick', function(event) {
+self.addEventListener("notificationclick", (event) => {
     event.notification.close();
+  
+    const urlToOpen = new URL("./", self.registration.scope).href;
+  
     event.waitUntil(
-        clients.openWindow('/')
+      clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.registration.scope) && "focus" in client) {
+            return client.focus();
+          }
+        }
+        return clients.openWindow(urlToOpen);
+      })
     );
-});
+  });

@@ -2417,6 +2417,7 @@ function initWhiteboard() {
 class NotificationManager {
   constructor() {
     this.unreadCount = 0;
+    this.vapidPublicKey = 'BIk7HNsAeC1XBnAxrr7jbDUiblf1ed3EEm7IbBEtnJCGTXIIcrmuvCMjDoQT4kqRkn8G-lCHbBhDhsmAtSPvijs';
     this.originalTitle = document.title;
     this.customIconHref = "favicon-v1.png";
     this.isTabVisible = !document.hidden;
@@ -2451,6 +2452,19 @@ class NotificationManager {
     console.log(`🔔 Browser notifications: ${Notification.permission}`);
   }
 
+  urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const rawData = atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
   /**
    * NEW: Register the Service Worker and subscribe to Push Notifications with FCM
    */
@@ -2458,12 +2472,9 @@ async registerAndSubscribe() {
   try {
     const registration = await navigator.serviceWorker.ready;
     
-    // Ensure this matches your Firebase Cloud Messaging VAPID key
-    const vapidPublicKey = 'YOUR_ACTUAL_PUBLIC_VAPID_KEY'; 
-    
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: vapidPublicKey
+      applicationServerKey: this.urlBase64ToUint8Array(this.vapidPublicKey)
     });
 
     // Use display name as the key, or a random ID if they haven't picked a name yet
