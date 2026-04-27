@@ -1047,6 +1047,10 @@ let selectedIndex = 0;
 // ============================================================
 firebase.auth().onAuthStateChanged((user) => {
   if (user) {
+    // Chat users can receive push without joining voice: sync existing subscription on auth.
+    if (window.notificationManager) {
+      window.notificationManager.ensurePushSubscription(false).catch(() => {});
+    }
     startChat();
     startPresenceListener();
     // Safety net: remove the skeleton loader after 5 s if no messages arrive
@@ -1333,6 +1337,11 @@ window.sendMessage = async () => {
 
   // Push regular message to Firebase Realtime Database
   try {
+    // Ensure push subscription from a chat user gesture (not only voice join).
+    if (window.notificationManager && !window.notificationManager.hasEnsuredPushThisSession) {
+      await window.notificationManager.ensurePushSubscription(true);
+    }
+
     const senderUserId = firebase.auth().currentUser?.uid || null;
     const senderDeviceId = window.notificationManager?.deviceId || null;
     const senderSpace = window.CHANNEL || "Linkice";
@@ -2434,6 +2443,7 @@ class NotificationManager {
     const params = new URLSearchParams(window.location.search);
     this.currentSpace = window.CHANNEL || params.get("space") || "Linkice";
     this.deviceId = this.getOrCreateDeviceId();
+    this.hasEnsuredPushThisSession = false;
     
     this.setupVisibilityListener();
     this.setupMobileBadge();
@@ -2483,7 +2493,7 @@ class NotificationManager {
     return outputArray;
   }
 
-  async ensurePushSubscription() {
+  async ensurePushSubscription(allowPrompt = false) {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
     if (!("Notification" in window)) return false;
   
@@ -2493,8 +2503,9 @@ class NotificationManager {
       // If user blocked notifications, stop here
       if (Notification.permission === "denied") return false;
   
-      // Ask only when still default
+      // Ask only if explicitly allowed (requires a user gesture path).
       if (Notification.permission === "default") {
+        if (!allowPrompt) return false;
         const p = await Notification.requestPermission();
         if (p !== "granted") return false;
       }
@@ -2523,6 +2534,7 @@ class NotificationManager {
   
       await firebase.database().ref(`push_subscriptions/${this.deviceId}`).set(payload);
       console.log("✅ Push subscription synced to RTDB");
+      this.hasEnsuredPushThisSession = true;
       return true;
     } catch (err) {
       console.error("❌ ensurePushSubscription failed:", err);
@@ -2535,31 +2547,9 @@ class NotificationManager {
    */
   async registerAndSubscribe() {
   try {
-    const registration = await navigator.serviceWorker.ready;
-    const existingSubscription = await registration.pushManager.getSubscription();
-    const subscription = existingSubscription || await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: this.urlBase64ToUint8Array(this.vapidPublicKey)
-    });
-
-    const subData = JSON.parse(JSON.stringify(subscription));
-    const currentUserId = firebase.auth().currentUser?.uid || null;
-    const payload = {
-      ...subData,
-      deviceId: this.deviceId,
-      userId: currentUserId,
-      username: window.myDisplayName || null,
-      space: window.CHANNEL || this.currentSpace,
-      updatedAt: Date.now()
-    };
-
-    // Save to Firebase
-    await firebase.database().ref(`push_subscriptions/${this.deviceId}`).set(payload);
-    
-    console.log(`✅ Push address saved for device: ${this.deviceId}`);
-    
+    await this.ensurePushSubscription(true);
   } catch (err) {
-    console.error('❌ Handshake failed:', err);
+    console.error("❌ Handshake failed:", err);
   }
   }
 
@@ -2652,12 +2642,7 @@ class NotificationManager {
   }
   
   async requestPermission() {
-    if (!("Notification" in window)) return false;
-    const permission = await Notification.requestPermission();
-    if (permission === "granted") {
-        await this.registerAndSubscribe(); // <--- Hook FCM here
-    }
-    return permission === "granted";
+    return this.ensurePushSubscription(true);
   }
   
   showBrowserNotification(username, message) {
