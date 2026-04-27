@@ -316,10 +316,19 @@
       firebase.initializeApp(firebaseConfig);
 
       // Global channel name used by Agora and Firebase
-      const spaceParam = new URLSearchParams(window.location.search).get("space");
-      window.CHANNEL = spaceParam
-        ? spaceParam.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "Linkice"
-        : "Linkice";
+      window.DEFAULT_SPACE = "Linkice";
+      window.SPACE_STORAGE_KEY = "activeSpace";
+      const sanitizeSpace = (value) =>
+        (value || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+
+      const querySpaceRaw = new URLSearchParams(window.location.search).get("space");
+      const querySpace = sanitizeSpace(querySpaceRaw);
+      const savedSpace = sanitizeSpace(localStorage.getItem(window.SPACE_STORAGE_KEY));
+      const resolvedSpace = querySpace || savedSpace || window.DEFAULT_SPACE;
+
+      window.CHANNEL = resolvedSpace;
+      localStorage.setItem(window.SPACE_STORAGE_KEY, resolvedSpace);
+
       const isDesktop = !/iPhone|iPad|Android/i.test(navigator.userAgent);
 
       // Slash-command definitions consumed by the autocomplete menu

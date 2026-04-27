@@ -12,8 +12,7 @@ class NotificationManager {
     this.lastNotificationTime = 0;
     this.notificationCooldown = 3000;
     
-    const params = new URLSearchParams(window.location.search);
-    this.currentSpace = window.CHANNEL || params.get("space") || "Linkice";
+    this.currentSpace = window.CHANNEL || window.DEFAULT_SPACE || "Linkice";
     this.deviceId = this.getOrCreateDeviceId();
     this.hasEnsuredPushThisSession = false;
     
@@ -219,7 +218,8 @@ class NotificationManager {
   
   showBrowserNotification(username, message) {
     if (Notification.permission !== "granted" || this.isTabVisible) return;
-    const title = this.currentSpace === "main" ? `${username} u Linkice` : `${username} u ${this.currentSpace}`;
+    const defaultSpace = window.DEFAULT_SPACE || "Linkice";
+    const title = this.currentSpace === defaultSpace ? `${username} u ${defaultSpace}` : `${username} u ${this.currentSpace}`;
     const notification = new Notification(title, {
       body: message.substring(0, 80),
       icon: this.customIconHref,

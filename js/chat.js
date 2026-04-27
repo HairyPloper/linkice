@@ -428,6 +428,7 @@ function handleCommand(text) {
         window.appendMessage("Sistem", "Naziv prostora sadrži nedozvoljene karaktere.", "#ef4444");
         return true;
       }
+      localStorage.setItem(window.SPACE_STORAGE_KEY || "activeSpace", spaceName);
       window.location.href = `?space=${spaceName}&name=${encodeURIComponent(window.myDisplayName)}`;
       return true;  
     case "/crtkica":
