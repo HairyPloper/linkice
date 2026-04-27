@@ -2441,7 +2441,6 @@ class NotificationManager {
     this.lastNotificationTime = 0;
     this.notificationCooldown = 3000;
     
-    this.currentSpace = window.CHANNEL || window.DEFAULT_SPACE || "Linkice";
     this.deviceId = this.getOrCreateDeviceId();
     this.hasEnsuredPushThisSession = false;
     
@@ -2458,6 +2457,10 @@ class NotificationManager {
       localStorage.setItem(key, id);
     }
     return id;
+  }
+
+  getCurrentSpace() {
+    return window.CHANNEL || window.DEFAULT_SPACE || "Linkice";
   }
   
   setupVisibilityListener() {
@@ -2528,7 +2531,7 @@ class NotificationManager {
         deviceId: this.deviceId,
         userId: firebase.auth().currentUser?.uid || null,
         username: window.myDisplayName || null,
-        space: window.CHANNEL || this.currentSpace,
+        space: this.getCurrentSpace(),
         updatedAt: Date.now(),
       };
   
@@ -2543,17 +2546,6 @@ class NotificationManager {
   }
 
   /**
-   * NEW: Register the Service Worker and subscribe to Push Notifications with FCM
-   */
-  async registerAndSubscribe() {
-  try {
-    await this.ensurePushSubscription(true);
-  } catch (err) {
-    console.error("❌ Handshake failed:", err);
-  }
-  }
-
-  /**
    * NEW: Send a request to Vercel to trigger a Push for everyone
    */
   async triggerGlobalPush(username, text) {
@@ -2565,8 +2557,8 @@ class NotificationManager {
           senderUsername: username,
           senderUserId: firebase.auth().currentUser?.uid || null,
           senderDeviceId: this.deviceId,
-          space: window.CHANNEL || this.currentSpace,
-          title: `Nova poruka od ${username}`,
+          space: this.getCurrentSpace(),
+          title: `${username}`,
           message: text
         })
       });
@@ -2641,19 +2633,16 @@ class NotificationManager {
     else navigator.clearAppBadge().catch(() => {});
   }
   
-  async requestPermission() {
-    return this.ensurePushSubscription(true);
-  }
-  
   showBrowserNotification(username, message) {
     if (Notification.permission !== "granted" || this.isTabVisible) return;
     const defaultSpace = window.DEFAULT_SPACE || "Linkice";
-    const title = this.currentSpace === defaultSpace ? `${username} u ${defaultSpace}` : `${username} u ${this.currentSpace}`;
+    const currentSpace = this.getCurrentSpace();
+    const title = currentSpace === defaultSpace ? `${username} u ${defaultSpace}` : `${username} u ${currentSpace}`;
     const notification = new Notification(title, {
       body: message.substring(0, 80),
       icon: this.customIconHref,
       badge: this.customIconHref,
-      tag: `linkice-${this.currentSpace}`,
+      tag: `linkice-${currentSpace}`,
     });
     notification.onclick = () => { window.focus(); notification.close(); };
     setTimeout(() => notification.close(), 4000);
@@ -2684,21 +2673,6 @@ window.setupNotificationIntegration = function() {
       return result;
     };
   }
-  
-  const joinBtn = document.getElementById("join-btn");
-  if (joinBtn) {
-    const originalOnClick = joinBtn.onclick;
-    joinBtn.onclick = async function() {
-      // Give the app a moment to set the name/UI
-      setTimeout(async () => {
-        if (window.notificationManager) {
-          await window.notificationManager.requestPermission();
-        }
-      }, 100);
-
-      if (originalOnClick) return originalOnClick.apply(this, arguments);
-    };
-  }
 };
 
 if (document.readyState === "loading") {
@@ -2714,7 +2688,7 @@ if ("serviceWorker" in navigator) {
       console.log("✅ SW Registered in scope:", reg.scope);
 
       if (window.notificationManager) {
-        await window.notificationManager.ensurePushSubscription();
+        await window.notificationManager.ensurePushSubscription(false);
       }
     } catch (err) {
       console.error("❌ SW Registration failed:", err);
