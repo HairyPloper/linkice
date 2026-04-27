@@ -522,6 +522,7 @@ function startChat() {
 
   // Prepend the welcome banner (ASCII art)
   window.appendSystemHTML(welcomeArt, true);
+  window.appendSystemHTML(location.pathname, true);
 
   // Listen to the last 50 messages; also fires for each new incoming message
   window.chatRef.limitToLast(50).on("child_added", (snapshot) => {
