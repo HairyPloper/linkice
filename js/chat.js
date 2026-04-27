@@ -52,6 +52,10 @@ let selectedIndex = 0;
 // ============================================================
 firebase.auth().onAuthStateChanged((user) => {
   if (user) {
+    // Chat users can receive push without joining voice: sync existing subscription on auth.
+    if (window.notificationManager) {
+      window.notificationManager.ensurePushSubscription(false).catch(() => {});
+    }
     startChat();
     startPresenceListener();
     // Safety net: remove the skeleton loader after 5 s if no messages arrive
@@ -338,6 +342,11 @@ window.sendMessage = async () => {
 
   // Push regular message to Firebase Realtime Database
   try {
+    // Ensure push subscription from a chat user gesture (not only voice join).
+    if (window.notificationManager && !window.notificationManager.hasEnsuredPushThisSession) {
+      await window.notificationManager.ensurePushSubscription(true);
+    }
+
     const senderUserId = firebase.auth().currentUser?.uid || null;
     const senderDeviceId = window.notificationManager?.deviceId || null;
     const senderSpace = window.CHANNEL || "Linkice";
