@@ -2483,10 +2483,57 @@ class NotificationManager {
     return outputArray;
   }
 
+  async ensurePushSubscription() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+    if (!("Notification" in window)) return false;
+  
+    try {
+      const registration = await navigator.serviceWorker.ready;
+  
+      // If user blocked notifications, stop here
+      if (Notification.permission === "denied") return false;
+  
+      // Ask only when still default
+      if (Notification.permission === "default") {
+        const p = await Notification.requestPermission();
+        if (p !== "granted") return false;
+      }
+  
+      let sub = await registration.pushManager.getSubscription();
+  
+      if (!sub) {
+        sub = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: this.urlBase64ToUint8Array(this.vapidPublicKey),
+        });
+        console.log("✅ New push subscription created");
+      } else {
+        console.log("ℹ️ Existing push subscription found");
+      }
+  
+      const subData = sub.toJSON();
+      const payload = {
+        ...subData,
+        deviceId: this.deviceId,
+        userId: firebase.auth().currentUser?.uid || null,
+        username: window.myDisplayName || null,
+        space: window.CHANNEL || this.currentSpace,
+        updatedAt: Date.now(),
+      };
+  
+      await firebase.database().ref(`push_subscriptions/${this.deviceId}`).set(payload);
+      console.log("✅ Push subscription synced to RTDB");
+      return true;
+    } catch (err) {
+      console.error("❌ ensurePushSubscription failed:", err);
+      return false;
+    }
+  }
+
   /**
    * NEW: Register the Service Worker and subscribe to Push Notifications with FCM
    */
-async registerAndSubscribe() {
+  async registerAndSubscribe() {
   try {
     const registration = await navigator.serviceWorker.ready;
     const existingSubscription = await registration.pushManager.getSubscription();
@@ -2514,7 +2561,7 @@ async registerAndSubscribe() {
   } catch (err) {
     console.error('❌ Handshake failed:', err);
   }
-}
+  }
 
   /**
    * NEW: Send a request to Vercel to trigger a Push for everyone
@@ -2674,10 +2721,17 @@ if (document.readyState === "loading") {
   setTimeout(window.setupNotificationIntegration, 500);
 }
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js', { scope: './' })
-  .then(reg => console.log('✅ SW Registered in scope:', reg.scope))
-  .catch(err => console.error('❌ SW Registration failed:', err));
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", async () => {
+    try {
+      const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+      console.log("✅ SW Registered in scope:", reg.scope);
+
+      if (window.notificationManager) {
+        await window.notificationManager.ensurePushSubscription();
+      }
+    } catch (err) {
+      console.error("❌ SW Registration failed:", err);
+    }
   });
 }
