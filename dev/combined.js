@@ -1423,6 +1423,7 @@ function handleCommand(text) {
         window.appendMessage("Sistem", "Naziv prostora sadrži nedozvoljene karaktere.", "#ef4444");
         return true;
       }
+      localStorage.setItem(window.SPACE_STORAGE_KEY || "activeSpace", spaceName);
       window.location.href = `?space=${spaceName}&name=${encodeURIComponent(window.myDisplayName)}`;
       return true;  
     case "/crtkica":
@@ -2440,8 +2441,7 @@ class NotificationManager {
     this.lastNotificationTime = 0;
     this.notificationCooldown = 3000;
     
-    const params = new URLSearchParams(window.location.search);
-    this.currentSpace = window.CHANNEL || params.get("space") || "Linkice";
+    this.currentSpace = window.CHANNEL || window.DEFAULT_SPACE || "Linkice";
     this.deviceId = this.getOrCreateDeviceId();
     this.hasEnsuredPushThisSession = false;
     
@@ -2647,7 +2647,8 @@ class NotificationManager {
   
   showBrowserNotification(username, message) {
     if (Notification.permission !== "granted" || this.isTabVisible) return;
-    const title = this.currentSpace === "main" ? `${username} u Linkice` : `${username} u ${this.currentSpace}`;
+    const defaultSpace = window.DEFAULT_SPACE || "Linkice";
+    const title = this.currentSpace === defaultSpace ? `${username} u ${defaultSpace}` : `${username} u ${this.currentSpace}`;
     const notification = new Notification(title, {
       body: message.substring(0, 80),
       icon: this.customIconHref,
