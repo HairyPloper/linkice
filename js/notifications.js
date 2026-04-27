@@ -13,11 +13,22 @@ class NotificationManager {
     this.notificationCooldown = 3000;
     
     const params = new URLSearchParams(window.location.search);
-    this.currentSpace = params.get("space") || "main";
+    this.currentSpace = window.CHANNEL || params.get("space") || "Linkice";
+    this.deviceId = this.getOrCreateDeviceId();
     
     this.setupVisibilityListener();
     this.setupMobileBadge();
     this.checkBrowserNotificationSupport();
+  }
+
+  getOrCreateDeviceId() {
+    const key = "pushDeviceId";
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = `dev_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(key, id);
+    }
+    return id;
   }
   
   setupVisibilityListener() {
@@ -59,20 +70,27 @@ class NotificationManager {
 async registerAndSubscribe() {
   try {
     const registration = await navigator.serviceWorker.ready;
-    
-    const subscription = await registration.pushManager.subscribe({
+    const existingSubscription = await registration.pushManager.getSubscription();
+    const subscription = existingSubscription || await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: this.urlBase64ToUint8Array(this.vapidPublicKey)
     });
 
-    // Use display name as the key, or a random ID if they haven't picked a name yet
-    const identifier = window.myDisplayName || `user_${Date.now()}`;
     const subData = JSON.parse(JSON.stringify(subscription));
+    const currentUserId = firebase.auth().currentUser?.uid || null;
+    const payload = {
+      ...subData,
+      deviceId: this.deviceId,
+      userId: currentUserId,
+      username: window.myDisplayName || null,
+      space: window.CHANNEL || this.currentSpace,
+      updatedAt: Date.now()
+    };
 
     // Save to Firebase
-    await firebase.database().ref(`push_subscriptions/${identifier}`).set(subData);
+    await firebase.database().ref(`push_subscriptions/${this.deviceId}`).set(payload);
     
-    console.log(`✅ Push address saved for: ${identifier}`);
+    console.log(`✅ Push address saved for device: ${this.deviceId}`);
     
   } catch (err) {
     console.error('❌ Handshake failed:', err);
@@ -88,6 +106,10 @@ async registerAndSubscribe() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          senderUsername: username,
+          senderUserId: firebase.auth().currentUser?.uid || null,
+          senderDeviceId: this.deviceId,
+          space: window.CHANNEL || this.currentSpace,
           title: `Nova poruka od ${username}`,
           message: text
         })
@@ -198,7 +220,11 @@ window.setupNotificationIntegration = function() {
       const result = originalAppendMessage.apply(this, arguments);
       if (isInitialLoad) return result;
       if (data && window.notificationManager) {
-        const isMe = data.username === window.myDisplayName;
+        const currentUserId = firebase.auth().currentUser?.uid || null;
+        const sameUsername = data.username === window.myDisplayName;
+        const sameUserId = !!(data.senderUserId && currentUserId && data.senderUserId === currentUserId);
+        const sameDevice = !!(data.senderDeviceId && data.senderDeviceId === window.notificationManager.deviceId);
+        const isMe = sameUsername || sameUserId || sameDevice;
         if (!isMe && name !== "Sistem") {
           window.notificationManager.incrementUnread({ username: name, text: text });
         }

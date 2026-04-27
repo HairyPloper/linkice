@@ -338,10 +338,16 @@ window.sendMessage = async () => {
 
   // Push regular message to Firebase Realtime Database
   try {
+    const senderUserId = firebase.auth().currentUser?.uid || null;
+    const senderDeviceId = window.notificationManager?.deviceId || null;
+    const senderSpace = window.CHANNEL || "Linkice";
     await window.chatRef.push({
       username: window.myDisplayName,
       text:      text,
       color:     window.myColor || "#805ff5",
+      senderUserId: senderUserId,
+      senderDeviceId: senderDeviceId,
+      space: senderSpace,
       timestamp: Date.now(),
     });
     chatInput.value = "";
