@@ -715,12 +715,12 @@ h2 {
 
 .chat-msg--other.chat-msg--connected::before {
   left: 28px;
-  background-image: url("data:image/svg+xml,%3Csvg width='14' height='22' viewBox='0 0 14 22' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='7,1 7,8 11,10 5,12 9,14 7,15.5 7,21' fill='none' stroke='%238b5cf6' stroke-width='.9' stroke-linecap='round' stroke-linejoin='round' opacity='.72'/%3E%3Cpolyline points='7,1 7,8 11,10 5,12 9,14 7,15.5 7,21' fill='none' stroke='%2322d3ee' stroke-width='.35' stroke-linecap='round' stroke-linejoin='round' opacity='.62'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg width='14' height='22' viewBox='0 0 14 22' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='7,1 7,7.5 11,9.5 5,11.5 9,13.5 7,14.5 7,21' fill='none' stroke='%238b5cf6' stroke-width='.9' stroke-linecap='round' stroke-linejoin='round' opacity='.72'/%3E%3Cpolyline points='7,1 7,7.5 11,9.5 5,11.5 9,13.5 7,14.5 7,21' fill='none' stroke='%2322d3ee' stroke-width='.35' stroke-linecap='round' stroke-linejoin='round' opacity='.62'/%3E%3C/svg%3E");
 }
 
 .chat-msg--own.chat-msg--connected::before {
   right: 28px;
-  background-image: url("data:image/svg+xml,%3Csvg width='14' height='22' viewBox='0 0 14 22' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='7,1 7,8 3,10 9,12 5,14 7,15.5 7,21' fill='none' stroke='%238b5cf6' stroke-width='.9' stroke-linecap='round' stroke-linejoin='round' opacity='.72'/%3E%3Cpolyline points='7,1 7,8 3,10 9,12 5,14 7,15.5 7,21' fill='none' stroke='%2322d3ee' stroke-width='.35' stroke-linecap='round' stroke-linejoin='round' opacity='.62'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg width='14' height='22' viewBox='0 0 14 22' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='7,1 7,7.5 3,9.5 9,11.5 5,13.5 7,14.5 7,21' fill='none' stroke='%238b5cf6' stroke-width='.9' stroke-linecap='round' stroke-linejoin='round' opacity='.72'/%3E%3Cpolyline points='7,1 7,7.5 3,9.5 9,11.5 5,13.5 7,14.5 7,21' fill='none' stroke='%2322d3ee' stroke-width='.35' stroke-linecap='round' stroke-linejoin='round' opacity='.62'/%3E%3C/svg%3E");
 }
 
 .chat-msg > a {
