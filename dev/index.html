@@ -22,6 +22,12 @@
 
     <!-- Main stylesheet -->
     <link rel="stylesheet" href="css/style.css" />
+    <link
+      rel="preload"
+      as="image"
+      href="src/linkice-loading-mobile.png"
+      media="(max-width: 767px)"
+    />
 
     <!-- PWA manifest for installability and metadata --> 
     <link rel="manifest" href="./manifest.json">
@@ -35,6 +41,22 @@
   </head>
 
   <body>
+    <div id="app-loading-screen" aria-hidden="true"></div>
+    <script>
+      (() => {
+        const hideLoadingScreen = () => {
+          const screen = document.getElementById("app-loading-screen");
+          if (!screen || screen.classList.contains("is-hidden")) return;
+          screen.classList.add("is-hidden");
+          setTimeout(() => screen.remove(), 500);
+        };
+
+        window.addEventListener("load", () => setTimeout(hideLoadingScreen, 250), {
+          once: true,
+        });
+        setTimeout(hideLoadingScreen, 3500);
+      })();
+    </script>
 
     <!-- ============================================================
          VIDEO BACKGROUND
@@ -350,6 +372,6 @@
          APPLICATION SCRIPTS
          Load order matters: main → utils → ui → rtc → chat -> whiteboard → notifications
          ============================================================ -->
-    <script src="js/bundle.min.js?v=c10a39dc7fdca569e74e1c1fbd43e8e6f1c40c52"></script>
+    <script src="js/bundle.min.js?v=cd80e634564a89e60971dba9563e936487a7da95"></script>
   </body>
 </html>
