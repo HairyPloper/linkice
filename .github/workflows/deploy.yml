@@ -43,7 +43,7 @@ jobs:
           terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
           
           # 1. Look for the main.js tag and swap it for the bundle.min.js tag
-          sed -i 's|<script src="js/main.js"></script>|<script src="js/bundle.min.js"></script>|' dist/index.html
+          sed -i "s|<script src=\"js/main.js\"></script>|<script src=\"js/bundle.min.js?v=${GITHUB_SHA}\"></script>|" dist/index.html
           
           # 2. Delete the other 6 specific local script tags
           # We use specific names so we don't accidentally delete Firebase or Agora
