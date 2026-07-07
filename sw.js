@@ -11,39 +11,57 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("push", function (event) {
-  event.waitUntil(async () => {
-    let payload = {
-      title: "Nova poruka",
-      body: "Neko je poslao poruku na Linkice.",
-    };
+  event.waitUntil(handlePush(event));
+});
+
+async function handlePush(event) {
+  const fallbackPayload = {
+    title: "Nova poruka",
+    body: "Neko je poslao poruku na Linkice.",
+  };
+
+  try {
+    let payload = fallbackPayload;
 
     if (event.data) {
       try {
-        // Try to parse JSON from Vercel/Web-Push
-        payload = await event.data.json();
+        payload = event.data.json();
       } catch (e) {
-        // Fallback if the payload is just a string
-        payload.body = event.data.text();
+        payload = { ...fallbackPayload, body: event.data.text() };
       }
     }
 
-    const body = payload.body || payload.message || "Neko je poslao poruku na Linkice.";
-    const title = payload.title || "Nova poruka";
+    await showLinkiceNotification({
+      title: payload.title || fallbackPayload.title,
+      body: payload.body || payload.message || fallbackPayload.body,
+    });
+  } catch (err) {
+    console.error("Push handler failed:", err);
+    await showLinkiceNotification(fallbackPayload);
+  }
+}
 
-    const options = {
-      body,
-      icon: NOTIFICATION_ICON,
-      badge: NOTIFICATION_BADGE,
-      vibrate: [100, 50, 100],
-      data: {
-        dateOfArrival: Date.now(),
-        primaryKey: "1",
-      },
-    };
+async function showLinkiceNotification(payload) {
+  const title = String(payload.title || "Nova poruka");
+  const body = String(payload.body || "Neko je poslao poruku na Linkice.");
+  const options = {
+    body,
+    icon: NOTIFICATION_ICON,
+    badge: NOTIFICATION_BADGE,
+    vibrate: [100, 50, 100],
+    data: {
+      dateOfArrival: Date.now(),
+      primaryKey: "1",
+    },
+  };
 
+  try {
     await self.registration.showNotification(title, options);
-  });
-});
+  } catch (err) {
+    console.error("Notification with icon failed:", err);
+    await self.registration.showNotification(title, { body });
+  }
+}
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();

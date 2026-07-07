@@ -83,17 +83,17 @@ class NotificationManager {
     if (!("Notification" in window)) return false;
   
     try {
-      const registration = await navigator.serviceWorker.ready;
-  
       // If user blocked notifications, stop here
       if (Notification.permission === "denied") return false;
   
-      // Ask only if explicitly allowed (requires a user gesture path).
+      // Ask before awaiting serviceWorker.ready so the first-send click gesture is preserved.
       if (Notification.permission === "default") {
         if (!allowPrompt) return false;
         const p = await Notification.requestPermission();
         if (p !== "granted") return false;
       }
+
+      const registration = await navigator.serviceWorker.ready;
   
       const applicationServerKey = this.urlBase64ToUint8Array(this.vapidPublicKey);
       let sub = await registration.pushManager.getSubscription();
@@ -143,6 +143,8 @@ class NotificationManager {
    */
   async triggerGlobalPush(username, text) {
     try {
+      const senderName = username || "Neko";
+      const notificationText = text ? `${senderName}: ${text}` : `${senderName}: Nova poruka`;
       const response = await fetch(window.APP_CONFIG?.notifyProxyUrl || 'https://my-proxy-vercel-kappa.vercel.app/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -151,8 +153,8 @@ class NotificationManager {
           senderUserId: firebase.auth().currentUser?.uid || null,
           senderDeviceId: this.deviceId,
           space: this.getCurrentSpace(),
-          title: `${username}`,
-          message: text,
+          title: "Linkice",
+          message: notificationText,
         })
       });
       if (!response.ok) {
