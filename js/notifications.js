@@ -152,10 +152,7 @@ class NotificationManager {
           senderDeviceId: this.deviceId,
           space: this.getCurrentSpace(),
           title: `${username}`,
-          body: text,
           message: text,
-          tag: `linkice-${this.getCurrentSpace()}`,
-          url: "./",
         })
       });
       if (!response.ok) {
