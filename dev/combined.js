@@ -10,6 +10,14 @@
 // ============================================================
 window.APP_ID = "beb2d2e844954540847d8bf07648926e";
 
+window.APP_CONFIG = {
+  aiProxyUrl: "https://my-proxy-vercel-kappa.vercel.app/api/gemini",
+  notifyProxyUrl: "https://my-proxy-vercel-kappa.vercel.app/api/notify",
+  corsProxyUrl: "https://corsproxy.io/?",
+  notificationIcon: "icon-192.png",
+  notificationBadge: "notification-badge.png",
+};
+
 // ============================================================
 // USERNAME
 // Read an optional ?name= query parameter, fall back to "Gost" (Guest).
@@ -133,7 +141,8 @@ async function loadSpeakers() {
   document.getElementById("speaker-hr").style.display    = "block";
   document.getElementById("speaker-label").style.display = "block";
   select.style.display = "block";
-}/**
+}
+/**
  * js/utils.js
  * Shared utility functions used across the app.
  * All functions are attached to `window` so every script can access them.
@@ -488,6 +497,10 @@ let isMuted = false;
 let screenTrack      = null;
 let screenAudioTrack = null;
 
+const LOCAL_SPEAKING_THRESHOLD = 14;
+const REMOTE_SPEAKING_THRESHOLD = 8;
+let localVolumeMonitor = null;
+
 // ============================================================
 // SHARED HELPER — resolveRemoteName
 // Returns a Promise<{name, icon}> for a remote Agora UID.
@@ -522,7 +535,22 @@ async function resolveRemoteName(uid) {
   return { name: fallback, icon: window.animals[Math.floor(Math.random() * window.animals.length)] };
 }
 
+function stopLocalVolumeMonitor() {
+  if (!localVolumeMonitor) return;
+  localVolumeMonitor.active = false;
+  if (localVolumeMonitor.frameId) {
+    cancelAnimationFrame(localVolumeMonitor.frameId);
+  }
+  if (localVolumeMonitor.silenceTimer) {
+    clearTimeout(localVolumeMonitor.silenceTimer);
+  }
+  localVolumeMonitor.ctx.close?.().catch(() => {});
+  document.getElementById(`avatar-${window.client.uid}`)?.classList.remove("speaking");
+  localVolumeMonitor = null;
+}
+
 function startLocalVolumeMonitor(localAudioTrack) {
+  stopLocalVolumeMonitor();
   const stream = new MediaStream([localAudioTrack.getMediaStreamTrack()]);
   const ctx = new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
@@ -534,18 +562,30 @@ function startLocalVolumeMonitor(localAudioTrack) {
   const data = new Uint8Array(analyser.frequencyBinCount);
   let silenceTimer = null;
   const DEACTIVATE_DELAY = 600;
+  const monitor = {
+    active: true,
+    ctx,
+    frameId: null,
+    silenceTimer: null,
+  };
+  localVolumeMonitor = monitor;
 
   (function tick() {
+    if (!monitor.active) return;
     analyser.getByteFrequencyData(data);
     const avg = data.reduce((a, b) => a + b, 0) / data.length;
     const avatar = document.getElementById(`avatar-${window.client.uid}`);
-    if (!avatar) { requestAnimationFrame(tick); return; }
+    if (!avatar) {
+      monitor.frameId = requestAnimationFrame(tick);
+      return;
+    }
 
-    if (avg > 8) {
+    if (avg > LOCAL_SPEAKING_THRESHOLD) {
       avatar.classList.add("speaking");
       if (silenceTimer) {
         clearTimeout(silenceTimer);
         silenceTimer = null;
+        monitor.silenceTimer = null;
       }
     } else {
       // Silence — only deactivate after holdoff
@@ -553,11 +593,13 @@ function startLocalVolumeMonitor(localAudioTrack) {
         silenceTimer = setTimeout(() => {
           avatar.classList.remove("speaking");
           silenceTimer = null;
+          monitor.silenceTimer = null;
         }, DEACTIVATE_DELAY);
+        monitor.silenceTimer = silenceTimer;
       }
     }
 
-    requestAnimationFrame(tick);
+    monitor.frameId = requestAnimationFrame(tick);
   })();
 }
 
@@ -714,7 +756,7 @@ window.client.on("volume-indicator", (volumes) => {
     const avatar = document.getElementById(`avatar-${id}`);
     if (!avatar) return;
 
-    if (vol.level > 5) {
+    if (vol.level > REMOTE_SPEAKING_THRESHOLD) {
       avatar.classList.add("speaking");
       if (speakingTimers.has(id)) {
         clearTimeout(speakingTimers.get(id));
@@ -775,7 +817,11 @@ if (joinBtn) joinBtn.onclick = async () => {
     // --- 1. ACQUIRE MICROPHONE ---
     let audioTrack;
     try {
-      audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+        AEC: window.audioSettings?.aec !== false,
+        AGC: window.audioSettings?.agc !== false,
+        ANS: window.audioSettings?.ans !== false,
+      });
     } catch (micErr) {
       console.error("Mikrofon nije dostupan:", micErr);
 
@@ -866,6 +912,7 @@ if (joinBtn) joinBtn.onclick = async () => {
   } catch (e) {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
+    stopLocalVolumeMonitor();
     try { await window.client.leave(); } catch (_) {}
     firebase.database()
       .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
@@ -894,6 +941,7 @@ async function leaveChannel() {
   if (screenTrack) await stopScreenShare();
 
   // --- 3. LOCAL AUDIO TRACK ---
+  stopLocalVolumeMonitor();
   if (localTracks.audioTrack) {
     localTracks.audioTrack.stop();
     localTracks.audioTrack.close();
@@ -912,6 +960,8 @@ async function leaveChannel() {
 
   // --- 5. RESET LOCAL STATE ---
   isMuted = false;
+  speakingTimers.forEach((timer) => clearTimeout(timer));
+  speakingTimers.clear();
 
   // --- removes stale entries
   window.uidNameMap = {};
@@ -1014,6 +1064,8 @@ const uploadBtn    = document.getElementById("upload-btn");
 const fileInput    = document.getElementById("file-input");
 const settingsBtn  = document.getElementById("settings-btn");
 const settingsMenu = document.getElementById("settings-menu");
+const AI_PROXY_URL = window.APP_CONFIG?.aiProxyUrl || "https://my-proxy-vercel-kappa.vercel.app/api/gemini";
+const CORS_PROXY_URL = window.APP_CONFIG?.corsProxyUrl || "https://corsproxy.io/?";
 
 // ASCII art banner shown in chat on first load
 const welcomeArt = `
@@ -1142,6 +1194,36 @@ window.appendMessage = (
 // Handles bot messages differently — splits question/answer visually
 // ============================================================
 function renderStandardMessage(msgDiv, name, text, color, timeString) {
+  msgDiv.innerHTML = "";
+  if (timeString) msgDiv.insertAdjacentHTML("beforeend", timeString);
+
+  const nameEl = document.createElement("b");
+  nameEl.style.color = color;
+  nameEl.textContent = `${name}: `;
+  msgDiv.appendChild(nameEl);
+
+  const contentEl = document.createElement("span");
+  msgDiv.appendChild(contentEl);
+
+  if (String(name).includes("ðŸ¤– Bot")) {
+    const parts = String(text).split("\n");
+    if (parts.length >= 2) {
+      const questionEl = document.createElement("div");
+      questionEl.style.cssText = "color: #fbbf24; margin-bottom: 5px;";
+      questionEl.textContent = parts[0];
+
+      const answerEl = document.createElement("div");
+      answerEl.style.color = "#ffffff";
+      answerEl.textContent = parts.slice(1).join("\n");
+
+      contentEl.append(questionEl, answerEl);
+      return;
+    }
+  }
+
+  renderTextWithMedia(contentEl, text);
+  return;
+
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const safeText = escapeHtml(text);
 
@@ -1163,6 +1245,184 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
   }
 
   msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${escapeHtml(name)}: </b><span>${formattedText}</span>`;
+}
+
+function renderTextWithMedia(container, text) {
+  const value = String(text || "");
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = urlRegex.exec(value)) !== null) {
+    const url = match[0];
+    if (match.index > lastIndex) {
+      container.appendChild(document.createTextNode(value.slice(lastIndex, match.index)));
+    }
+    container.appendChild(createMediaElement(url));
+    lastIndex = match.index + url.length;
+  }
+
+  if (lastIndex < value.length) {
+    container.appendChild(document.createTextNode(value.slice(lastIndex)));
+  }
+}
+
+function createMediaElement(url) {
+  const isImage   = /\.(jpeg|jpg|gif|png|webp)$/i.test(url);
+  const isVideo   = /\.(mp4|webm|ogg)$/i.test(url);
+  const isAudio   = /\.(mp3|wav)$/i.test(url);
+  const isDoc     = /\.(zip|rar|7z|pdf|doc|docx|txt)$/i.test(url);
+  const ytMatch   = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  const spotifyMatch = url.match(/open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/);
+  const fileName = url.split("/").pop().split("?")[0];
+
+  if (isImage) {
+    const card = document.createElement("div");
+    card.className = "media-card";
+
+    const img = document.createElement("img");
+    img.src = url;
+    img.className = "media-img";
+    img.addEventListener("click", () => {
+      img.requestFullscreen?.() || window.open(url, "_blank", "noopener");
+    });
+
+    const link = createMediaLink(url, `ðŸ–¼ ${fileName}`, "media-link");
+    card.append(img, link);
+    return card;
+  }
+
+  if (isVideo) {
+    const card = document.createElement("div");
+    card.className = "media-card";
+
+    const video = document.createElement("video");
+    video.controls = true;
+    video.className = "media-video";
+    const source = document.createElement("source");
+    source.src = url;
+    video.appendChild(source);
+
+    const link = createMediaLink(url, `ðŸŽ¬ ${fileName}`, "media-link");
+    card.append(video, link);
+    return card;
+  }
+
+  if (isAudio) {
+    const card = document.createElement("div");
+    card.className = "media-card media-card--audio";
+
+    const icon = document.createElement("span");
+    icon.className = "media-audio-icon";
+    icon.textContent = "ðŸŽµ";
+
+    const info = document.createElement("div");
+    info.className = "media-audio-info";
+    const name = document.createElement("span");
+    name.className = "media-audio-name";
+    name.textContent = fileName;
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.className = "media-audio";
+    const source = document.createElement("source");
+    source.src = url;
+    audio.appendChild(source);
+    info.append(name, audio);
+
+    card.append(icon, info);
+    return card;
+  }
+
+  if (isDoc) {
+    const ext = fileName.split(".").pop().toUpperCase();
+    const icons = {
+      ZIP: "ðŸ—œ", RAR: "ðŸ—œ", "7Z": "ðŸ—œ",
+      PDF: "ðŸ“„", DOC: "ðŸ“", DOCX: "ðŸ“", TXT: "ðŸ“ƒ",
+    };
+
+    const card = document.createElement("div");
+    card.className = "media-card media-card--doc";
+    const icon = document.createElement("span");
+    icon.className = "media-doc-icon";
+    icon.textContent = icons[ext] || "ðŸ“";
+
+    const info = document.createElement("div");
+    info.className = "media-doc-info";
+    const name = document.createElement("span");
+    name.className = "media-doc-name";
+    name.textContent = fileName;
+    const extEl = document.createElement("span");
+    extEl.className = "media-doc-ext";
+    extEl.textContent = ext;
+    info.append(name, extEl);
+
+    const download = createMediaLink(url, "Preuzmi", "media-doc-btn");
+    card.append(icon, info, download);
+    return card;
+  }
+
+  if (ytMatch) {
+    const card = document.createElement("div");
+    card.className = "media-card media-card--yt";
+    const wrap = document.createElement("div");
+    wrap.className = "media-yt-wrap";
+    const iframe = document.createElement("iframe");
+    iframe.src = `https://www.youtube.com/embed/${ytMatch[1]}`;
+    iframe.className = "media-yt";
+    iframe.allowFullscreen = true;
+    iframe.loading = "lazy";
+    iframe.referrerPolicy = "no-referrer-when-downgrade";
+    wrap.appendChild(iframe);
+    card.append(wrap, createMediaLink(url, "â–¶ YouTube", "media-link"));
+    return card;
+  }
+
+  if (spotifyMatch) {
+    const [, type, id] = spotifyMatch;
+    const heightMap = {
+      track: 152,
+      episode: 152,
+      album: 352,
+      playlist: 352,
+      artist: 352,
+    };
+    const h = heightMap[type] ?? 152;
+    const isFull = h > 152;
+
+    const card = document.createElement("div");
+    card.className = `media-card media-card--spotify ${isFull ? "media-card--spotify-full" : ""}`;
+    const iframe = document.createElement("iframe");
+    iframe.src = `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`;
+    iframe.width = "100%";
+    iframe.height = String(h);
+    iframe.style.border = "0";
+    iframe.allow = "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture";
+    iframe.loading = "lazy";
+    iframe.className = "media-spotify";
+    card.appendChild(iframe);
+    return card;
+  }
+
+  return createMediaLink(url, `ðŸ”— ${url}`, "media-link-plain");
+}
+
+function createMediaLink(url, label, className) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.className = className;
+  link.textContent = label;
+  return link;
+}
+
+function getPollVoteKey(option) {
+  return encodeURIComponent(option).replace(/\./g, "%2E");
+}
+
+function getPollVoteCount(votes, option) {
+  if (!votes) return 0;
+  return votes[getPollVoteKey(option)] || votes[option] || 0;
 }
 
 // ============================================================
@@ -1299,9 +1559,9 @@ function renderPoll(msgDiv, snapshotKey, data, color, timeString) {
   if (data.options) {
     data.options.forEach((opt) => {
 
-      const count  = data.votes && data.votes[opt] ? data.votes[opt] : 0;
+      const count  = getPollVoteCount(data.votes, opt);
       // Encode ONLY for the ID attribute
-      const safeIdPart = encodeURIComponent(opt);
+      const safeIdPart = getPollVoteKey(opt);
 
       const button = document.createElement("button");
       button.className = "poll-btn";
@@ -1462,7 +1722,7 @@ function handleCommand(text) {
       const question = pollData[0].trim();
       const options  = pollData.slice(1).map((opt) => opt.trim()).filter((opt) => opt !== "");
       const pollVotes = {};
-      options.forEach((opt) => (pollVotes[opt] = 0));
+      options.forEach((opt) => (pollVotes[getPollVoteKey(opt)] = 0));
 
       window.chatRef.push({
         username:  window.myDisplayName,
@@ -1594,10 +1854,11 @@ function startChat() {
   // Listen for updates to existing messages (used for live poll vote counts)
   window.chatRef.on("child_changed", (snapshot) => {
     const message = snapshot.val();
+    const messageKey = snapshot.key;
     if (message && message.type === "poll" && Array.isArray(message.options)) {
       message.options.forEach((opt) => {
-        const el = document.getElementById(`count-${message_key}-${encodeURIComponent(opt)}`);
-        if (el) el.innerText = message.votes && (message.votes[opt] || 0);
+        const el = document.getElementById(`count-${messageKey}-${getPollVoteKey(opt)}`);
+        if (el) el.innerText = getPollVoteCount(message.votes, opt);
       });
     }
   });
@@ -1647,7 +1908,7 @@ window.vote = (pollId, option) => {
     return;
   }
 
-  const pollRef = window.chatRef.child(`${pollId}/votes/${option}`);
+  const pollRef = window.chatRef.child(`${pollId}/votes/${getPollVoteKey(option)}`);
 
   // Atomic increment — safe under concurrent updates
   pollRef.transaction((currentVotes) => (currentVotes || 0) + 1);
@@ -1679,7 +1940,7 @@ async function uploadFile(file, expiry) {
     // Direct request failed (likely CORS) — retry via proxy
     console.error("Direktan upload nije uspeo, pokušavam preko proxy-ja...", e);
     try {
-      const proxyRes = await fetch("https://corsproxy.io/?" + apiUrl, {
+      const proxyRes = await fetch(CORS_PROXY_URL + apiUrl, {
         method: "POST",
         body: formData,
       });
@@ -1943,7 +2204,7 @@ window.askAI = async (prompt) => {
   for (let modelName of models) {
     try {
       const response = await fetch(
-        "https://my-proxy-vercel-kappa.vercel.app/api/gemini",
+        AI_PROXY_URL,
         {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
@@ -2014,7 +2275,8 @@ document.addEventListener("click", (e) => {
   if (settingsMenu && !settingsMenu.contains(e.target) && e.target !== settingsBtn) {
     settingsMenu.classList.add("hidden");
   }
-});/**
+});
+/**
  * js/whiteboard.js
  * Shared real-time whiteboard using Firebase and HTML Canvas.
  * Desktop only.
@@ -2436,7 +2698,8 @@ class NotificationManager {
     this.unreadCount = 0;
     this.vapidPublicKey = 'BIk7HNsAeC1XBnAxrr7jbDUiblf1ed3EEm7IbBEtnJCGTXIIcrmuvCMjDoQT4kqRkn8G-lCHbBhDhsmAtSPvijs';
     this.originalTitle = document.title;
-    this.customIconHref = "favicon-v1.png";
+    this.customIconHref = window.APP_CONFIG?.notificationIcon || "icon-192.png";
+    this.badgeIconHref = window.APP_CONFIG?.notificationBadge || "notification-badge.png";
     this.isTabVisible = !document.hidden;
     this.lastNotificationTime = 0;
     this.notificationCooldown = 3000;
@@ -2550,7 +2813,7 @@ class NotificationManager {
    */
   async triggerGlobalPush(username, text) {
     try {
-      await fetch('https://my-proxy-vercel-kappa.vercel.app/api/notify', {
+      await fetch(window.APP_CONFIG?.notifyProxyUrl || 'https://my-proxy-vercel-kappa.vercel.app/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2641,7 +2904,7 @@ class NotificationManager {
     const notification = new Notification(title, {
       body: message.substring(0, 80),
       icon: this.customIconHref,
-      badge: this.customIconHref,
+      badge: this.badgeIconHref,
       tag: `linkice-${currentSpace}`,
     });
     notification.onclick = () => { window.focus(); notification.close(); };
