@@ -29,18 +29,15 @@ self.addEventListener("push", function (event) {
 
     const body = payload.body || payload.message || "Neko je poslao poruku na Linkice.";
     const title = payload.title || "Nova poruka";
-    const url = payload.url || "./";
 
     const options = {
       body,
       icon: NOTIFICATION_ICON,
       badge: NOTIFICATION_BADGE,
       vibrate: [100, 50, 100],
-      tag: payload.tag || "linkice-message",
       data: {
         dateOfArrival: Date.now(),
         primaryKey: "1",
-        url,
       },
     };
 
@@ -51,8 +48,7 @@ self.addEventListener("push", function (event) {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url || "./";
-  const urlToOpen = new URL(targetUrl, self.registration.scope).href;
+  const urlToOpen = new URL("./", self.registration.scope).href;
 
   event.waitUntil(
     clients
