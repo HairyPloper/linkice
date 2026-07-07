@@ -122,7 +122,7 @@ class NotificationManager {
    */
   async triggerGlobalPush(username, text) {
     try {
-      await fetch(window.APP_CONFIG?.notifyProxyUrl || 'https://my-proxy-vercel-kappa.vercel.app/api/notify', {
+      const response = await fetch(window.APP_CONFIG?.notifyProxyUrl || 'https://my-proxy-vercel-kappa.vercel.app/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -131,9 +131,25 @@ class NotificationManager {
           senderDeviceId: this.deviceId,
           space: this.getCurrentSpace(),
           title: `${username}`,
-          message: text
+          body: text,
+          message: text,
+          tag: `linkice-${this.getCurrentSpace()}`,
+          url: "./",
         })
       });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        console.error("❌ Push trigger failed:", response.status, errorText);
+        return;
+      }
+      const result = await response.json().catch(() => null);
+      const stats = result?.stats;
+      if (stats) {
+        console.info("Push trigger stats:", stats);
+        if (stats.sent === 0 || stats.failed > 0 || stats.removedInvalid > 0) {
+          console.warn("⚠️ Push trigger completed with no/partial delivery:", stats);
+        }
+      }
     } catch (err) {
       console.error('❌ Push trigger failed:', err);
     }
@@ -258,6 +274,7 @@ if ("serviceWorker" in navigator) {
     try {
       const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
       console.log("✅ SW Registered in scope:", reg.scope);
+      reg.update().catch(() => {});
 
       if (window.notificationManager) {
         await window.notificationManager.ensurePushSubscription(false);
