@@ -1,6 +1,6 @@
 // sw.js - Keep it simple and separate from your main app logic
-const NOTIFICATION_ICON = "icon-192.png";
-const NOTIFICATION_BADGE = "notification-badge.png";
+const NOTIFICATION_ICON = "favicon-v1.png";
+const NOTIFICATION_BADGE = "favicon-v1.png";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -44,7 +44,7 @@ self.addEventListener("push", function (event) {
       },
     };
 
-    self.registration.showNotification(title, options);
+    await self.registration.showNotification(title, options);
   });
 });
 

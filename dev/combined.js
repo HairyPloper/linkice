@@ -2759,6 +2759,16 @@ class NotificationManager {
     return outputArray;
   }
 
+  arrayBuffersEqual(a, b) {
+    if (!a || !b || a.byteLength !== b.byteLength) return false;
+    const aa = new Uint8Array(a);
+    const bb = new Uint8Array(b);
+    for (let i = 0; i < aa.length; i++) {
+      if (aa[i] !== bb[i]) return false;
+    }
+    return true;
+  }
+
   async ensurePushSubscription(allowPrompt = false) {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
     if (!("Notification" in window)) return false;
@@ -2776,12 +2786,20 @@ class NotificationManager {
         if (p !== "granted") return false;
       }
   
+      const applicationServerKey = this.urlBase64ToUint8Array(this.vapidPublicKey);
       let sub = await registration.pushManager.getSubscription();
+
+      const existingKey = sub?.options?.applicationServerKey || null;
+      if (sub && existingKey && !this.arrayBuffersEqual(existingKey, applicationServerKey)) {
+        await sub.unsubscribe();
+        sub = null;
+        console.log("ℹ️ Old push subscription used a different VAPID key; resubscribing");
+      }
   
       if (!sub) {
         sub = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: this.urlBase64ToUint8Array(this.vapidPublicKey),
+          applicationServerKey,
         });
         console.log("✅ New push subscription created");
       } else {
@@ -2795,6 +2813,9 @@ class NotificationManager {
         userId: firebase.auth().currentUser?.uid || null,
         username: window.myDisplayName || null,
         space: this.getCurrentSpace(),
+        scope: registration.scope,
+        userAgent: navigator.userAgent,
+        standalone: window.matchMedia?.("(display-mode: standalone)")?.matches || navigator.standalone === true,
         updatedAt: Date.now(),
       };
   
@@ -2963,7 +2984,10 @@ if (document.readyState === "loading") {
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
-      const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+      const reg = await navigator.serviceWorker.register("./sw.js", {
+        scope: "./",
+        updateViaCache: "none",
+      });
       console.log("✅ SW Registered in scope:", reg.scope);
       reg.update().catch(() => {});
 
