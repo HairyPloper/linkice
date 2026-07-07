@@ -112,18 +112,32 @@ window.appendMessage = (
   msgDiv.className = "chat-msg";
 
   // Align own messages to the right and tint them green
-  const isMe = data && data.username === window.myDisplayName;
+  const isSystem = name === "Sistem" || (data && data.username === "Sistem");
+  const isMe = !isSystem && data && data.username === window.myDisplayName;
+  msgDiv.classList.add(isSystem ? "chat-msg--system" : isMe ? "chat-msg--own" : "chat-msg--other");
   msgDiv.style.alignSelf = isMe ? "flex-end" : "flex-start";
   if (isMe) msgDiv.style.backgroundColor = "rgba(74, 222, 128, 0.1)";
 
   // Coloured left/right border indicates the sender
   msgDiv.style[isMe ? "borderRight" : "borderLeft"] = `3px solid ${color}`;
+  msgDiv.style.setProperty("--msg-accent", color);
 
   // Delegate to the appropriate renderer based on message type
   if (data && data.type === "poll") {
     renderPoll(msgDiv, snapshotKey, data, color, timeString);
   } else {
     renderStandardMessage(msgDiv, name, text, color, timeString);
+  }
+
+  const previousMessage = [
+    ...chatMessages.querySelectorAll(".chat-msg:not(.system-msg):not(.chat-msg--system)"),
+  ].pop();
+  if (
+    !isSystem &&
+    previousMessage &&
+    previousMessage.classList.contains(isMe ? "chat-msg--own" : "chat-msg--other")
+  ) {
+    msgDiv.classList.add("chat-msg--connected");
   }
 
   chatMessages.appendChild(msgDiv);
