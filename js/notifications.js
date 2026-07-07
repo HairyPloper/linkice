@@ -7,7 +7,8 @@ class NotificationManager {
     this.unreadCount = 0;
     this.vapidPublicKey = 'BIk7HNsAeC1XBnAxrr7jbDUiblf1ed3EEm7IbBEtnJCGTXIIcrmuvCMjDoQT4kqRkn8G-lCHbBhDhsmAtSPvijs';
     this.originalTitle = document.title;
-    this.customIconHref = "favicon-v1.png";
+    this.customIconHref = window.APP_CONFIG?.notificationIcon || "icon-192.png";
+    this.badgeIconHref = window.APP_CONFIG?.notificationBadge || "notification-badge.png";
     this.isTabVisible = !document.hidden;
     this.lastNotificationTime = 0;
     this.notificationCooldown = 3000;
@@ -121,7 +122,7 @@ class NotificationManager {
    */
   async triggerGlobalPush(username, text) {
     try {
-      await fetch('https://my-proxy-vercel-kappa.vercel.app/api/notify', {
+      await fetch(window.APP_CONFIG?.notifyProxyUrl || 'https://my-proxy-vercel-kappa.vercel.app/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -212,7 +213,7 @@ class NotificationManager {
     const notification = new Notification(title, {
       body: message.substring(0, 80),
       icon: this.customIconHref,
-      badge: this.customIconHref,
+      badge: this.badgeIconHref,
       tag: `linkice-${currentSpace}`,
     });
     notification.onclick = () => { window.focus(); notification.close(); };

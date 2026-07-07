@@ -29,6 +29,10 @@ jobs:
 
           cp index.html dist/index.html
           cp favicon-v1.png dist/favicon-v1.png
+          cp icon-192.png dist/icon-192.png
+          cp icon-512.png dist/icon-512.png
+          cp icon-maskable-512.png dist/icon-maskable-512.png
+          cp notification-badge.png dist/notification-badge.png
           cp manifest.json dist/manifest.json
           cp -r css dist/css || true
           cp -r src dist/src || true
