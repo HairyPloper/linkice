@@ -23,12 +23,6 @@
 
     <!-- Main stylesheet -->
     <link rel="stylesheet" href="css/style.css" />
-    <link
-      rel="preload"
-      as="image"
-      href="src/linkice-loading-mobile.png"
-      media="(max-width: 767px)"
-    />
 
     <!-- PWA manifest for installability and metadata --> 
     <link rel="manifest" href="./manifest.json?v=4">
@@ -42,23 +36,6 @@
   </head>
 
   <body>
-    <div id="app-loading-screen" aria-hidden="true"></div>
-    <script>
-      (() => {
-        const hideLoadingScreen = () => {
-          const screen = document.getElementById("app-loading-screen");
-          if (!screen || screen.classList.contains("is-hidden")) return;
-          screen.classList.add("is-hidden");
-          setTimeout(() => screen.remove(), 500);
-        };
-
-        window.addEventListener("load", () => setTimeout(hideLoadingScreen, 250), {
-          once: true,
-        });
-        setTimeout(hideLoadingScreen, 3500);
-      })();
-    </script>
-
     <!-- ============================================================
          VIDEO BACKGROUND
          ambient video with a dark overlay for contrast
