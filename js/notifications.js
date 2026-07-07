@@ -19,6 +19,7 @@ class NotificationManager {
     this.setupVisibilityListener();
     this.setupMobileBadge();
     this.checkBrowserNotificationSupport();
+    this.setupFirstInteractionPrompt();
   }
 
   getOrCreateDeviceId() {
@@ -53,6 +54,21 @@ class NotificationManager {
   checkBrowserNotificationSupport() {
     if (!("Notification" in window)) return;
     console.log(`🔔 Browser notifications: ${Notification.permission}`);
+  }
+
+  setupFirstInteractionPrompt() {
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "default") return;
+
+    const promptOnce = () => {
+      document.removeEventListener("pointerdown", promptOnce, true);
+      document.removeEventListener("keydown", promptOnce, true);
+      if (Notification.permission !== "default") return;
+      this.ensurePushSubscription(true).catch(() => {});
+    };
+
+    document.addEventListener("pointerdown", promptOnce, { capture: true, once: true });
+    document.addEventListener("keydown", promptOnce, { capture: true, once: true });
   }
 
   urlBase64ToUint8Array(base64String) {
