@@ -1,4 +1,5 @@
 # Linkice
+<img width="2508" height="627" alt="ChatGPT Image Jul 9, 2026, 10_07_17 AM" src="https://github.com/user-attachments/assets/beded649-869b-4d27-af4f-e2545e0e5c55" />
 
 A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanilla JavaScript. No accounts, no installs — open a link and talk. Create separate spaces instantly with a URL parameter.
 
