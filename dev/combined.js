@@ -1219,7 +1219,8 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
   const contentEl = document.createElement("span");
   msgDiv.appendChild(contentEl);
 
-  if (String(name).includes("ðŸ¤– Bot")) {
+  const isBotMessage = /\bBot(?:\s*\(|$)/.test(String(name));
+  if (isBotMessage) {
     const parts = String(text).split("\n");
     if (parts.length >= 2) {
       const questionEl = document.createElement("div");
@@ -1236,29 +1237,6 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
   }
 
   renderTextWithMedia(contentEl, text);
-  return;
-
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const safeText = escapeHtml(text);
-
-  let formattedText;
-
-  if (name.includes("🤖 Bot")) {
-    // Bot responses: highlight the question line in amber, answer in white
-    const parts = safeText.split("\n");
-    if (parts.length >= 2) {
-      const questionPart = parts[0];
-      const answerPart   = parts.slice(1).join("\n");
-      formattedText = `<div style="color: #fbbf24; margin-bottom: 5px;">${questionPart}</div><div style="color: #ffffff;">${answerPart}</div>`;
-    } else {
-      formattedText = safeText.replace(urlRegex, (url) => formatMediaLinks(url));
-    }
-  } else {
-    // Regular messages: replace URLs with rich media embeds
-    formattedText = safeText.replace(urlRegex, (url) => formatMediaLinks(url));
-  }
-
-  msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${escapeHtml(name)}: </b><span>${formattedText}</span>`;
 }
 
 function renderTextWithMedia(container, text) {
@@ -2210,7 +2188,7 @@ if (chatContainer && dragHandle) {
 // Tries Gemini models in order, falling back if rate-limited or unavailable
 // ============================================================
 window.askAI = async (prompt) => {
-  const models = ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemma-3-4b-it"];
+  const models = ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
 
   // Show a "thinking" placeholder immediately
   window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-bot", { username: "🤖" });
