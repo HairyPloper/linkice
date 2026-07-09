@@ -25,6 +25,10 @@ let isMuted = false;
 let screenTrack      = null;
 let screenAudioTrack = null;
 
+const LOCAL_SPEAKING_THRESHOLD = 14;
+const REMOTE_SPEAKING_THRESHOLD = 8;
+let localVolumeMonitor = null;
+
 // ============================================================
 // SHARED HELPER — resolveRemoteName
 // Returns a Promise<{name, icon}> for a remote Agora UID.
@@ -59,7 +63,22 @@ async function resolveRemoteName(uid) {
   return { name: fallback, icon: window.animals[Math.floor(Math.random() * window.animals.length)] };
 }
 
+function stopLocalVolumeMonitor() {
+  if (!localVolumeMonitor) return;
+  localVolumeMonitor.active = false;
+  if (localVolumeMonitor.frameId) {
+    cancelAnimationFrame(localVolumeMonitor.frameId);
+  }
+  if (localVolumeMonitor.silenceTimer) {
+    clearTimeout(localVolumeMonitor.silenceTimer);
+  }
+  localVolumeMonitor.ctx.close?.().catch(() => {});
+  document.getElementById(`avatar-${window.client.uid}`)?.classList.remove("speaking");
+  localVolumeMonitor = null;
+}
+
 function startLocalVolumeMonitor(localAudioTrack) {
+  stopLocalVolumeMonitor();
   const stream = new MediaStream([localAudioTrack.getMediaStreamTrack()]);
   const ctx = new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
@@ -71,18 +90,30 @@ function startLocalVolumeMonitor(localAudioTrack) {
   const data = new Uint8Array(analyser.frequencyBinCount);
   let silenceTimer = null;
   const DEACTIVATE_DELAY = 600;
+  const monitor = {
+    active: true,
+    ctx,
+    frameId: null,
+    silenceTimer: null,
+  };
+  localVolumeMonitor = monitor;
 
   (function tick() {
+    if (!monitor.active) return;
     analyser.getByteFrequencyData(data);
     const avg = data.reduce((a, b) => a + b, 0) / data.length;
     const avatar = document.getElementById(`avatar-${window.client.uid}`);
-    if (!avatar) { requestAnimationFrame(tick); return; }
+    if (!avatar) {
+      monitor.frameId = requestAnimationFrame(tick);
+      return;
+    }
 
-    if (avg > 8) {
+    if (avg > LOCAL_SPEAKING_THRESHOLD) {
       avatar.classList.add("speaking");
       if (silenceTimer) {
         clearTimeout(silenceTimer);
         silenceTimer = null;
+        monitor.silenceTimer = null;
       }
     } else {
       // Silence — only deactivate after holdoff
@@ -90,11 +121,13 @@ function startLocalVolumeMonitor(localAudioTrack) {
         silenceTimer = setTimeout(() => {
           avatar.classList.remove("speaking");
           silenceTimer = null;
+          monitor.silenceTimer = null;
         }, DEACTIVATE_DELAY);
+        monitor.silenceTimer = silenceTimer;
       }
     }
 
-    requestAnimationFrame(tick);
+    monitor.frameId = requestAnimationFrame(tick);
   })();
 }
 
@@ -251,7 +284,7 @@ window.client.on("volume-indicator", (volumes) => {
     const avatar = document.getElementById(`avatar-${id}`);
     if (!avatar) return;
 
-    if (vol.level > 5) {
+    if (vol.level > REMOTE_SPEAKING_THRESHOLD) {
       avatar.classList.add("speaking");
       if (speakingTimers.has(id)) {
         clearTimeout(speakingTimers.get(id));
@@ -312,7 +345,11 @@ if (joinBtn) joinBtn.onclick = async () => {
     // --- 1. ACQUIRE MICROPHONE ---
     let audioTrack;
     try {
-      audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+        AEC: window.audioSettings?.aec !== false,
+        AGC: window.audioSettings?.agc !== false,
+        ANS: window.audioSettings?.ans !== false,
+      });
     } catch (micErr) {
       console.error("Mikrofon nije dostupan:", micErr);
 
@@ -403,6 +440,7 @@ if (joinBtn) joinBtn.onclick = async () => {
   } catch (e) {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
+    stopLocalVolumeMonitor();
     try { await window.client.leave(); } catch (_) {}
     firebase.database()
       .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
@@ -431,6 +469,7 @@ async function leaveChannel() {
   if (screenTrack) await stopScreenShare();
 
   // --- 3. LOCAL AUDIO TRACK ---
+  stopLocalVolumeMonitor();
   if (localTracks.audioTrack) {
     localTracks.audioTrack.stop();
     localTracks.audioTrack.close();
@@ -449,6 +488,8 @@ async function leaveChannel() {
 
   // --- 5. RESET LOCAL STATE ---
   isMuted = false;
+  speakingTimers.forEach((timer) => clearTimeout(timer));
+  speakingTimers.clear();
 
   // --- removes stale entries
   window.uidNameMap = {};

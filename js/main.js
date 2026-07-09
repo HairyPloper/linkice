@@ -10,6 +10,14 @@
 // ============================================================
 window.APP_ID = "beb2d2e844954540847d8bf07648926e";
 
+window.APP_CONFIG = {
+  aiProxyUrl: "https://my-proxy-vercel-kappa.vercel.app/api/gemini",
+  notifyProxyUrl: "https://my-proxy-vercel-kappa.vercel.app/api/notify",
+  corsProxyUrl: "https://corsproxy.io/?",
+  notificationIcon: "icon-192.png",
+  notificationBadge: "notification-badge.png",
+};
+
 // ============================================================
 // USERNAME
 // Read an optional ?name= query parameter, fall back to "Gost" (Guest).
