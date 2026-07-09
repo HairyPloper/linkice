@@ -1219,7 +1219,8 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
   const contentEl = document.createElement("span");
   msgDiv.appendChild(contentEl);
 
-  if (String(name).includes("ðŸ¤– Bot")) {
+  const isBotMessage = /\bBot(?:\s*\(|$)/.test(String(name));
+  if (isBotMessage) {
     const parts = String(text).split("\n");
     if (parts.length >= 2) {
       const questionEl = document.createElement("div");
@@ -1236,29 +1237,184 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
   }
 
   renderTextWithMedia(contentEl, text);
-  return;
+}
 
+function renderTextWithMedia(container, text) {
+  const value = String(text || "");
   const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const safeText = escapeHtml(text);
+  let lastIndex = 0;
+  let match;
 
-  let formattedText;
-
-  if (name.includes("🤖 Bot")) {
-    // Bot responses: highlight the question line in amber, answer in white
-    const parts = safeText.split("\n");
-    if (parts.length >= 2) {
-      const questionPart = parts[0];
-      const answerPart   = parts.slice(1).join("\n");
-      formattedText = `<div style="color: #fbbf24; margin-bottom: 5px;">${questionPart}</div><div style="color: #ffffff;">${answerPart}</div>`;
-    } else {
-      formattedText = safeText.replace(urlRegex, (url) => formatMediaLinks(url));
+  while ((match = urlRegex.exec(value)) !== null) {
+    const url = match[0];
+    if (match.index > lastIndex) {
+      container.appendChild(document.createTextNode(value.slice(lastIndex, match.index)));
     }
-  } else {
-    // Regular messages: replace URLs with rich media embeds
-    formattedText = safeText.replace(urlRegex, (url) => formatMediaLinks(url));
+    container.appendChild(createMediaElement(url));
+    lastIndex = match.index + url.length;
   }
 
-  msgDiv.innerHTML = `${timeString}<b style="color: ${color}">${escapeHtml(name)}: </b><span>${formattedText}</span>`;
+  if (lastIndex < value.length) {
+    container.appendChild(document.createTextNode(value.slice(lastIndex)));
+  }
+}
+
+function createMediaElement(url) {
+  const isImage   = /\.(jpeg|jpg|gif|png|webp)$/i.test(url);
+  const isVideo   = /\.(mp4|webm|ogg)$/i.test(url);
+  const isAudio   = /\.(mp3|wav)$/i.test(url);
+  const isDoc     = /\.(zip|rar|7z|pdf|doc|docx|txt)$/i.test(url);
+  const ytMatch   = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  const spotifyMatch = url.match(/open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/);
+  const fileName = url.split("/").pop().split("?")[0];
+
+  if (isImage) {
+    const card = document.createElement("div");
+    card.className = "media-card";
+
+    const img = document.createElement("img");
+    img.src = url;
+    img.className = "media-img";
+    img.addEventListener("click", () => {
+      img.requestFullscreen?.() || window.open(url, "_blank", "noopener");
+    });
+
+    const link = createMediaLink(url, `ðŸ–¼ ${fileName}`, "media-link");
+    card.append(img, link);
+    return card;
+  }
+
+  if (isVideo) {
+    const card = document.createElement("div");
+    card.className = "media-card";
+
+    const video = document.createElement("video");
+    video.controls = true;
+    video.className = "media-video";
+    const source = document.createElement("source");
+    source.src = url;
+    video.appendChild(source);
+
+    const link = createMediaLink(url, `ðŸŽ¬ ${fileName}`, "media-link");
+    card.append(video, link);
+    return card;
+  }
+
+  if (isAudio) {
+    const card = document.createElement("div");
+    card.className = "media-card media-card--audio";
+
+    const icon = document.createElement("span");
+    icon.className = "media-audio-icon";
+    icon.textContent = "ðŸŽµ";
+
+    const info = document.createElement("div");
+    info.className = "media-audio-info";
+    const name = document.createElement("span");
+    name.className = "media-audio-name";
+    name.textContent = fileName;
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.className = "media-audio";
+    const source = document.createElement("source");
+    source.src = url;
+    audio.appendChild(source);
+    info.append(name, audio);
+
+    card.append(icon, info);
+    return card;
+  }
+
+  if (isDoc) {
+    const ext = fileName.split(".").pop().toUpperCase();
+    const icons = {
+      ZIP: "ðŸ—œ", RAR: "ðŸ—œ", "7Z": "ðŸ—œ",
+      PDF: "ðŸ“„", DOC: "ðŸ“", DOCX: "ðŸ“", TXT: "ðŸ“ƒ",
+    };
+
+    const card = document.createElement("div");
+    card.className = "media-card media-card--doc";
+    const icon = document.createElement("span");
+    icon.className = "media-doc-icon";
+    icon.textContent = icons[ext] || "ðŸ“";
+
+    const info = document.createElement("div");
+    info.className = "media-doc-info";
+    const name = document.createElement("span");
+    name.className = "media-doc-name";
+    name.textContent = fileName;
+    const extEl = document.createElement("span");
+    extEl.className = "media-doc-ext";
+    extEl.textContent = ext;
+    info.append(name, extEl);
+
+    const download = createMediaLink(url, "Preuzmi", "media-doc-btn");
+    card.append(icon, info, download);
+    return card;
+  }
+
+  if (ytMatch) {
+    const card = document.createElement("div");
+    card.className = "media-card media-card--yt";
+    const wrap = document.createElement("div");
+    wrap.className = "media-yt-wrap";
+    const iframe = document.createElement("iframe");
+    iframe.src = `https://www.youtube.com/embed/${ytMatch[1]}`;
+    iframe.className = "media-yt";
+    iframe.allowFullscreen = true;
+    iframe.loading = "lazy";
+    iframe.referrerPolicy = "no-referrer-when-downgrade";
+    wrap.appendChild(iframe);
+    card.append(wrap, createMediaLink(url, "â–¶ YouTube", "media-link"));
+    return card;
+  }
+
+  if (spotifyMatch) {
+    const [, type, id] = spotifyMatch;
+    const heightMap = {
+      track: 152,
+      episode: 152,
+      album: 352,
+      playlist: 352,
+      artist: 352,
+    };
+    const h = heightMap[type] ?? 152;
+    const isFull = h > 152;
+
+    const card = document.createElement("div");
+    card.className = `media-card media-card--spotify ${isFull ? "media-card--spotify-full" : ""}`;
+    const iframe = document.createElement("iframe");
+    iframe.src = `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`;
+    iframe.width = "100%";
+    iframe.height = String(h);
+    iframe.style.border = "0";
+    iframe.allow = "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture";
+    iframe.loading = "lazy";
+    iframe.className = "media-spotify";
+    card.appendChild(iframe);
+    return card;
+  }
+
+  return createMediaLink(url, `ðŸ”— ${url}`, "media-link-plain");
+}
+
+function createMediaLink(url, label, className) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.className = className;
+  link.textContent = label;
+  return link;
+}
+
+function getPollVoteKey(option) {
+  return encodeURIComponent(option).replace(/\./g, "%2E");
+}
+
+function getPollVoteCount(votes, option) {
+  if (!votes) return 0;
+  return votes[getPollVoteKey(option)] || votes[option] || 0;
 }
 
 function renderTextWithMedia(container, text) {
@@ -2210,7 +2366,7 @@ if (chatContainer && dragHandle) {
 // Tries Gemini models in order, falling back if rate-limited or unavailable
 // ============================================================
 window.askAI = async (prompt) => {
-  const models = ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemma-3-4b-it"];
+  const models = ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
 
   // Show a "thinking" placeholder immediately
   window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-bot", { username: "🤖" });
