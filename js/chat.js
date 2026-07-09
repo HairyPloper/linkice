@@ -110,6 +110,7 @@ window.appendMessage = (
 
   const msgDiv = document.createElement("div");
   msgDiv.className = "chat-msg";
+  if (snapshotKey) msgDiv.id = `chat-msg-${snapshotKey}`;
 
   // Align own messages to the right and tint them green
   const isSystem = name === "Sistem" || (data && data.username === "Sistem");
@@ -1322,9 +1323,13 @@ if (chatContainer && dragHandle) {
 // ============================================================
 window.askAI = async (prompt) => {
   const models = ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+  const thinkingMessageId = `temp-bot-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const removeThinkingMessage = () => {
+    document.getElementById(`chat-msg-${thinkingMessageId}`)?.remove();
+  };
 
   // Show a "thinking" placeholder immediately
-  window.appendMessage("🤖", "Razmišljam...", "#fbbf24", "temp-bot", { username: "🤖" });
+  window.appendMessage("🤖", "Razmišljam...", "#fbbf24", thinkingMessageId, { username: "🤖" });
 
   for (let modelName of models) {
     try {
@@ -1347,6 +1352,7 @@ window.askAI = async (prompt) => {
 
       if (data.candidates && data.candidates[0].content.parts[0].text) {
         const aiText = data.candidates[0].content.parts[0].text;
+        removeThinkingMessage();
 
         // Push the answer to Firebase so all users see the bot response
         window.chatRef.push({
@@ -1363,6 +1369,7 @@ window.askAI = async (prompt) => {
   }
 
   // All models failed
+  removeThinkingMessage();
   window.appendMessage("Sistem", "Svi Bot modeli su trenutno zauzeti. Pokušajte kasnije.", "#ef4444");
 };
 
