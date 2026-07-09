@@ -33,6 +33,7 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
 }
+
 /* ============================================================
    BUTTONS
    ============================================================ */
@@ -121,8 +122,6 @@ body {
    Hides video, repositions chat and controls for small screens
    ============================================================ */
 @media (max-width: 767px) {
-
-
   /* Hide screen share button to prevent UI clutter on mobile */
   .screen-btn,
   #screen-btn {
@@ -644,6 +643,7 @@ h2 {
   border-radius: 12px;
   width: fit-content;
   max-width: 85%;
+  position: relative;
   border: 1px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 8px;
   line-height: 1.5;
@@ -657,6 +657,32 @@ h2 {
 
 .chat-msg:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.chat-msg--connected::before {
+  content: "";
+  position: absolute;
+  top: -22px;
+  width: 14px;
+  height: 22px;
+  opacity: 0.58;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 14px 22px;
+  filter:
+    drop-shadow(0 0 2px rgba(34, 211, 238, 0.42))
+    drop-shadow(0 0 3px rgba(139, 92, 246, 0.35));
+}
+
+.chat-msg--other.chat-msg--connected::before {
+  left: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg width='14' height='22' viewBox='0 0 14 22' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='7,1 7,7.5 11,9.5 5,11.5 9,13.5 7,14.5 7,21' fill='none' stroke='%238b5cf6' stroke-width='.9' stroke-linecap='round' stroke-linejoin='round' opacity='.72'/%3E%3Cpolyline points='7,1 7,7.5 11,9.5 5,11.5 9,13.5 7,14.5 7,21' fill='none' stroke='%2322d3ee' stroke-width='.35' stroke-linecap='round' stroke-linejoin='round' opacity='.62'/%3E%3C/svg%3E");
+}
+
+.chat-msg--own.chat-msg--connected::before {
+  right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg width='14' height='22' viewBox='0 0 14 22' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='7,1 7,7.5 3,9.5 9,11.5 5,13.5 7,14.5 7,21' fill='none' stroke='%238b5cf6' stroke-width='.9' stroke-linecap='round' stroke-linejoin='round' opacity='.72'/%3E%3Cpolyline points='7,1 7,7.5 3,9.5 9,11.5 5,13.5 7,14.5 7,21' fill='none' stroke='%2322d3ee' stroke-width='.35' stroke-linecap='round' stroke-linejoin='round' opacity='.62'/%3E%3C/svg%3E");
 }
 
 .chat-msg > a {
