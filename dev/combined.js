@@ -496,6 +496,15 @@ let isMuted = false;
 // Screen share tracks (video + optional system audio)
 let screenTrack      = null;
 let screenAudioTrack = null;
+let screenAudioCaptureTrack = null;
+let screenAudioContext = null;
+
+// System audio is usually much louder than a processed microphone. Reduce it
+// before Agora mixes both tracks into the remote user's single audio stream.
+const SCREEN_SHARE_AUDIO_GAIN = 0.45;
+
+// Keep the UI volume stable when Agora republishes/replaces a remote track.
+const remoteVolumes = new Map();
 
 const LOCAL_SPEAKING_THRESHOLD = 14;
 const REMOTE_SPEAKING_THRESHOLD = 8;
@@ -609,6 +618,40 @@ function startLocalVolumeMonitor(localAudioTrack) {
 // ============================================================
 const screenBtn = document.getElementById("screen-btn");
 
+/**
+ * Routes captured system audio through Web Audio so its outgoing level can be
+ * reduced. LocalAudioTrack.setVolume only changes local playback, so a custom
+ * track is required to change what remote listeners receive.
+ */
+async function createAttenuatedScreenAudioTrack(capturedTrack) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass || !AgoraRTC.createCustomAudioTrack) return capturedTrack;
+
+  try {
+    screenAudioContext = new AudioContextClass();
+    await screenAudioContext.resume();
+
+    const inputStream = new MediaStream([capturedTrack.getMediaStreamTrack()]);
+    const source = screenAudioContext.createMediaStreamSource(inputStream);
+    const gain = screenAudioContext.createGain();
+    const destination = screenAudioContext.createMediaStreamDestination();
+
+    gain.gain.value = SCREEN_SHARE_AUDIO_GAIN;
+    source.connect(gain).connect(destination);
+
+    screenAudioCaptureTrack = capturedTrack;
+    return AgoraRTC.createCustomAudioTrack({
+      mediaStreamTrack: destination.stream.getAudioTracks()[0],
+    });
+  } catch (error) {
+    console.warn("Screen audio attenuation unavailable; using captured audio directly.", error);
+    screenAudioContext?.close?.().catch(() => {});
+    screenAudioContext = null;
+    screenAudioCaptureTrack = null;
+    return capturedTrack;
+  }
+}
+
 if (screenBtn) screenBtn.onclick = async () => {
   if (!screenTrack) {
     // --- Start screen share ---
@@ -628,7 +671,7 @@ if (screenBtn) screenBtn.onclick = async () => {
       // or a single track when only video is available
       if (Array.isArray(result)) {
         screenTrack      = result[0];
-        screenAudioTrack = result[1];
+        screenAudioTrack = await createAttenuatedScreenAudioTrack(result[1]);
       } else {
         screenTrack      = result;
         screenAudioTrack = null;
@@ -653,6 +696,7 @@ if (screenBtn) screenBtn.onclick = async () => {
 
     } catch (e) {
       console.error(e);
+      await stopScreenShare();
     }
   } else {
     // --- Stop screen share ---
@@ -663,17 +707,32 @@ if (screenBtn) screenBtn.onclick = async () => {
 /** Unpublishes and cleans up all screen share tracks */
 async function stopScreenShare() {
   if (screenTrack) {
-    await window.client.unpublish(screenTrack);
-    screenTrack.stop();
-    screenTrack.close();
+    const track = screenTrack;
     screenTrack = null;
+    await window.client.unpublish(track).catch(() => {});
+    track.stop();
+    track.close();
   }
 
   if (screenAudioTrack) {
-    await window.client.unpublish(screenAudioTrack);
-    screenAudioTrack.stop();
-    screenAudioTrack.close();
+    const track = screenAudioTrack;
     screenAudioTrack = null;
+    await window.client.unpublish(track).catch(() => {});
+    track.stop();
+    track.close();
+  }
+
+  // When attenuation is active, the browser capture track feeds the custom
+  // published track and must be released separately.
+  if (screenAudioCaptureTrack) {
+    screenAudioCaptureTrack.stop();
+    screenAudioCaptureTrack.close();
+    screenAudioCaptureTrack = null;
+  }
+
+  if (screenAudioContext) {
+    await screenAudioContext.close().catch(() => {});
+    screenAudioContext = null;
   }
 
   // Restore button to its default state
@@ -700,6 +759,7 @@ window.client.on("user-published", async (user, mediaType) => {
 
   if (mediaType === "audio") {
     user.audioTrack.play();
+    user.audioTrack.setVolume(remoteVolumes.get(String(user.uid)) ?? 100);
   }
 
   if (mediaType === "video") {
@@ -723,6 +783,7 @@ window.client.on("user-unpublished", (user, mediaType) => {
 window.client.on("user-left", (user) => {
   const displayName = window.getDisplayName(user.uid);
   delete window.uidNameMap[user.uid];
+  remoteVolumes.delete(String(user.uid));
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
@@ -962,6 +1023,7 @@ async function leaveChannel() {
   isMuted = false;
   speakingTimers.forEach((timer) => clearTimeout(timer));
   speakingTimers.clear();
+  remoteVolumes.clear();
 
   // --- removes stale entries
   window.uidNameMap = {};
@@ -1040,8 +1102,10 @@ window.toggleMute = async () => {
 // Sets the playback volume for a specific remote user (0–100)
 // ============================================================
 window.adjustVolume = (uid, vol) => {
+  const volume = Math.max(0, Math.min(100, Number.parseInt(vol, 10) || 0));
+  remoteVolumes.set(String(uid), volume);
   const user = window.client.remoteUsers.find((u) => u.uid == uid);
-  if (user?.audioTrack) user.audioTrack.setVolume(parseInt(vol));
+  if (user?.audioTrack) user.audioTrack.setVolume(volume);
 };
 /**
  * js/chat.js
