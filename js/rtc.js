@@ -29,7 +29,7 @@ let screenAudioContext = null;
 
 // System audio is usually much louder than a processed microphone. Reduce it
 // before Agora mixes both tracks into the remote user's single audio stream.
-const SCREEN_SHARE_AUDIO_GAIN = 0.45;
+const SCREEN_SHARE_AUDIO_GAIN = 0.18;
 
 // Keep the UI volume stable when Agora republishes/replaces a remote track.
 const remoteVolumes = new Map();
