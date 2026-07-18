@@ -306,7 +306,8 @@ window.client.on("user-unpublished", (user, mediaType) => {
 
 /**
  * Fired when a remote user leaves the channel.
- * Plays a low tone, posts a system message, and removes the user's card.
+ * Plays a low tone and posts a system message. Firebase presence owns card
+ * removal so a temporary Agora disconnect cannot hide a still-present user.
  */
 window.client.on("user-left", (user) => {
   const displayName = window.getDisplayName(user.uid);
@@ -316,8 +317,6 @@ window.client.on("user-left", (user) => {
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
 
-  const el = document.getElementById(`user-${user.uid}`);
-  if (el) el.remove();
 });
 
 /**
@@ -327,6 +326,9 @@ window.client.on("user-left", (user) => {
  */
 window.client.on("user-joined", async (user) => {
   const { name, icon } = await resolveRemoteName(user.uid);
+  // Idempotent recovery path: Firebase normally creates the card, but an
+  // Agora reconnect must also restore it if an earlier event removed it.
+  window.drawUser(user.uid, name, icon, false);
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${name}** se priključio.`, "#fbbf24");
   if (user.uid !== window.client.uid) window._playTone(660, 0.1);
