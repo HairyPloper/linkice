@@ -52,14 +52,19 @@ let selectedIndex = 0;
 // FIREBASE AUTH
 // Waits for anonymous auth before initialising the chat listener
 // ============================================================
-firebase.auth().onAuthStateChanged((user) => {
+firebase.auth().onAuthStateChanged(async (user) => {
   if (user) {
     // Chat users can receive push without joining voice: sync existing subscription on auth.
     if (window.notificationManager) {
       window.notificationManager.ensurePushSubscription(false).catch(() => {});
     }
+    await window.prepareIdentityForSpace();
     startChat();
     startPresenceListener();
+    if (window.identityNotice) {
+      window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
+      window.identityNotice = null;
+    }
     // Safety net: remove the skeleton loader after 5 s if no messages arrive
     setTimeout(() => {
       const skeleton = document.getElementById("chat-skeleton-loader");
@@ -601,13 +606,18 @@ function handleCommand(text) {
     case "/nick":
       const newNick = args.slice(1).join(" ");
       if (newNick) {
-        window.myDisplayName = newNick;
-        localStorage.setItem("savedUsername", newNick);
-        // Update own card in the grid
-        const nameEl = document.querySelector(`#user-${window.client?.uid} .username`);
-        if (nameEl) nameEl.textContent = `${newNick} (Ti)`;
-
-        window.appendMessage("Sistem", `Nadimak promenjen u: **${newNick}**`, "#fbbf24");
+        window.changeNickname(newNick)
+          .then((changed) => {
+            if (changed) {
+              window.appendMessage("Sistem", `Nadimak promenjen u: **${newNick}**`, "#fbbf24");
+            } else {
+              window.appendMessage("Sistem", `Nadimak **${newNick}** je već zauzet u ovom prostoru.`, "#ef4444");
+            }
+          })
+          .catch((error) => {
+            console.error("Promena nadimka nije uspela:", error);
+            window.appendMessage("Sistem", "Promena nadimka trenutno nije uspela.", "#ef4444");
+          });
       }
       return true;
 
@@ -626,13 +636,13 @@ function handleCommand(text) {
         window.appendMessage("Sistem", "Format: /space {naziv-prostora}", "#ef4444");
         return true;
       }
-      const spaceName = spaceArg.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+      const spaceName = window.sanitizeSpace(spaceArg);
       if (!spaceName) {
         window.appendMessage("Sistem", "Naziv prostora sadrži nedozvoljene karaktere.", "#ef4444");
         return true;
       }
       localStorage.setItem(window.SPACE_STORAGE_KEY || "activeSpace", spaceName);
-      window.location.href = `?space=${spaceName}&name=${encodeURIComponent(window.myDisplayName)}`;
+      window.location.href = `?space=${spaceName}`;
       return true;  
     case "/crtkica":
       if (/iPhone|iPad|Android/i.test(navigator.userAgent)) {
@@ -741,7 +751,6 @@ function startChat() {
 
   // Prepend the welcome banner (ASCII art)
   window.appendSystemHTML(welcomeArt, true);
-  window.appendSystemHTML(location.pathname, true);
 
   // Listen to the last 50 messages; also fires for each new incoming message
   window.chatRef.limitToLast(50).on("child_added", (snapshot) => {
@@ -815,11 +824,14 @@ function startChat() {
   firebase.database()
     .ref(`presence/${window.CHANNEL}`)
     .on("child_changed", (snapshot) => {
-      const message = snapshot.val();
+      const data = snapshot.val();
       const uid  = snapshot.key;
-      if (!message) return;
+      if (!data?.displayName) return;
+      window.uidNameMap[uid] = data.displayName;
+      const isMe = uid === String(window.myAgoraUID);
+      window.drawUser(uid, data.displayName, data.icon, isMe);
       const avatar = document.getElementById(`avatar-${uid}`);
-      if (avatar) avatar.classList.toggle("muted", message.muted === true);
+      if (avatar) avatar.classList.toggle("muted", data.muted === true);
     });
 }
 

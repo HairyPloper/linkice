@@ -428,33 +428,30 @@ if (joinBtn) joinBtn.onclick = async () => {
       return; 
     }
 
-    // --- 2. JOIN AGORA CHANNEL ---
-    await window.client.join(window.APP_ID, window.CHANNEL, null, window.myAgoraUID);
-    client.enableAudioVolumeIndicator(200, 3);
-
-    // --- 3. PUBLISH AUDIO TRACK ---
+    // --- 2. ATOMICALLY CLAIM A UNIQUE PRESENCE IDENTITY ---
     localTracks.audioTrack = audioTrack;
+    await window.claimPresenceIdentity(window.myAgoraUID);
+    window.uidNameMap[window.myAgoraUID] = window.myDisplayName;
+    if (window.identityNotice && window.appendMessage) {
+      window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
+      window.identityNotice = null;
+    }
+
+    // --- 3. JOIN AGORA CHANNEL ---
+    await window.client.join(window.APP_ID, window.CHANNEL, null, window.myAgoraUID);
+    window.client.enableAudioVolumeIndicator(200, 3);
+
+    // --- 4. PUBLISH AUDIO TRACK ---
     startLocalVolumeMonitor(localTracks.audioTrack);
     await window.client.publish(localTracks.audioTrack);
+    window.isVoiceJoined = true;
 
-    // --- 4. UPDATE PRESENCE IN FIREBASE ---
+    // --- 5. RESTORE THE UNIQUE PRESENCE CLAIM AFTER FIREBASE RECONNECTS ---
     window.uidNameMap[window.client.uid] = window.myDisplayName;
-    const myPresenceRef = firebase.database().ref(`presence/${window.CHANNEL}/${window.client.uid}`);
-
-    // Define the presence setup logic so we can reuse it on reconnect
-    const updatePresence = () => {
-      myPresenceRef.set({ 
-        displayName: window.myDisplayName, 
-        icon: window.myIcon 
-      });
-      myPresenceRef.onDisconnect().remove();
-    };
-
-    updatePresence();
     let isFirstConnect = true;
     let reconnectTimeout = null;
     // The real-time disconnect/reconnect callback
-    firebase.database().ref(".info/connected").on("value", (snap) => {
+    firebase.database().ref(".info/connected").on("value", async (snap) => {
       const isConnected = snap.val();
       if (isConnected === false) {
         // callback on disconnect (e.g. network loss)
@@ -471,8 +468,17 @@ if (joinBtn) joinBtn.onclick = async () => {
         if (reconnectTimeout) clearTimeout(reconnectTimeout);
         if (!isFirstConnect){
           console.log("Firebase konekcija obnovljena...");
-          //window.appendMessage("Sistem", "Konekcija firebase ponovo uspostavljena.", "#4ade80");
-          updatePresence();
+          try {
+            await window.claimPresenceIdentity(window.myAgoraUID);
+            window.uidNameMap[window.myAgoraUID] = window.myDisplayName;
+            window.drawUser(window.myAgoraUID, window.myDisplayName, window.myIcon, true);
+            if (window.identityNotice && window.appendMessage) {
+              window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
+              window.identityNotice = null;
+            }
+          } catch (error) {
+            console.error("Obnova presence identiteta nije uspela:", error);
+          }
         }else{
           // Avoid showing "connection restored" message on the initial join
           isFirstConnect = false;
@@ -483,7 +489,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     if (window.appendMessage)
       window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#fbbf24");
 
-    // --- 5. UPDATE UI TO CONNECTED STATE ---
+    // --- 6. UPDATE UI TO CONNECTED STATE ---
     window.drawUser(window.client.uid, window.myDisplayName, window.myIcon, true);
     window.requestWakeLock();
 
@@ -503,10 +509,16 @@ if (joinBtn) joinBtn.onclick = async () => {
   } catch (e) {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
+    window.isVoiceJoined = false;
     stopLocalVolumeMonitor();
+    if (localTracks.audioTrack) {
+      localTracks.audioTrack.stop();
+      localTracks.audioTrack.close();
+      localTracks.audioTrack = null;
+    }
     try { await window.client.leave(); } catch (_) {}
     firebase.database()
-      .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
+      .ref(`presence/${window.CHANNEL}/${window.myAgoraUID}`)
       .remove();
 
     const s = document.getElementById("status");
@@ -522,6 +534,7 @@ if (joinBtn) joinBtn.onclick = async () => {
 // Called by the leave button — no page reload needed.
 // ============================================================
 async function leaveChannel() {
+  window.isVoiceJoined = false;
   // --- 1. WAKE LOCK ---
   if (window.wakeLock) {
     await window.wakeLock.release();

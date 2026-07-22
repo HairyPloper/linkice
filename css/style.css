@@ -319,6 +319,10 @@ h2 {
   z-index: 1;
 }
 
+.avatar.paired-icon {
+  font-size: 24px;
+}
+
 /* Muted participant — desaturated and faded */
 .avatar.muted {
   opacity: 0.5;
@@ -607,12 +611,23 @@ h2 {
 #chat-header {
   user-select: none;
   display: flex;
-  justify-content: flex-end;
   align-items: center;
+  gap: 8px;
   padding: 10px;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 12px 12px 0 0;
+}
+
+#space-name {
+  margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Scrollable message feed */

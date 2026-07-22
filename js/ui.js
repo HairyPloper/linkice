@@ -111,12 +111,12 @@ window.drawUser = (uid, username, icon, isMe = false) => {
     // Firebase callback populates uidNameMap with the real display name.
     const nameEl = existing.querySelector(".username");
     if (nameEl) {
-      const safeUsername = window.escapeHtml ? window.escapeHtml(username) : username;
-      // Only overwrite if the current text looks like a raw number (the fallback)
-    const currentText = nameEl.textContent.replace(" (Ti)", "").trim();
-    if (currentText !== username) {
-      nameEl.textContent = `${safeUsername}${isMe ? " (Ti)" : ""}`;
+      nameEl.textContent = `${username}${isMe ? " (Ti)" : ""}`;
     }
+    const avatarEl = existing.querySelector(".avatar");
+    if (avatarEl && icon) {
+      avatarEl.textContent = icon;
+      avatarEl.classList.toggle("paired-icon", !window.animals.includes(icon));
     }
     return;
   }
@@ -144,6 +144,7 @@ window.drawUser = (uid, username, icon, isMe = false) => {
   avatar.className  = "avatar";
   avatar.id         = `avatar-${uid}`; // Used by the volume-indicator listener in rtc.js
   avatar.textContent = displayIcon;
+  avatar.classList.toggle("paired-icon", !window.animals.includes(displayIcon));
 
   avatarContainer.appendChild(avatar);
   card.appendChild(avatarContainer);
@@ -151,8 +152,8 @@ window.drawUser = (uid, username, icon, isMe = false) => {
   // --- Username label ---
   const nameDiv = document.createElement("div");
   nameDiv.className = "username";
-  // Escape to prevent XSS if the username contains HTML characters
-  nameDiv.textContent = `${window.escapeHtml ? window.escapeHtml(username) : username}${isMe ? " (Ti)" : ""}`;
+  // textContent prevents HTML in user-provided names from being interpreted.
+  nameDiv.textContent = `${username}${isMe ? " (Ti)" : ""}`;
   card.appendChild(nameDiv);
 
   // --- Volume slider (remote users only) ---
