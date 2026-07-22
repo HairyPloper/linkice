@@ -10,7 +10,8 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 - 🎙️ **Voice calls** — join/leave a persistent space with mic mute, per-user volume sliders, and speaking indicators
 - 💬 **Persistent chat** — messages stored in Firebase. Supports images, video, audio, YouTube, Spotify, and file embeds automatically from URLs
 - 🏠 **Multiple spaces** — each `?space=` URL parameter creates a fully isolated space with its own voice channel, chat history, whiteboard, and presence. Share a link like `yoursite.com?space=gaming` to invite someone into a specific space
-- 🎭 **Unique identities** — anonymous visitors receive a persistent funny nickname and animal icon; Firebase presence prevents active participants in the same space from sharing either one
+- 🎭 **Unique identities** — anonymous visitors receive a session-only funny nickname and animal icon; Firebase presence prevents participants in the same space from sharing either one
+- 💤 **AFK disconnect** — inactive voice listeners receive a warning after 5 minutes and automatically leave Agora after 10 minutes while remaining connected to chat
 - 🖥️ **Screen sharing** — 1080p/30fps with optional system audio capture
 - 🎨 **Shared whiteboard** — real-time collaborative canvas with drawing tools and eraser, synced via Firebase
 - 🎮 **Word guessing game** — drawer picks a word, others guess via chat. 60-second timer, confetti on correct guess
@@ -28,7 +29,7 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 | `/poll Question , Option1 , Option2` | Create a live poll |
 | `/nick <name>` | Change your display name |
 | `/roll <max>` | Roll a random number (default 1–100) |
-| `/msg <user> <message>` | Send a private message |
+| `/msg <user> <message>` | Send a private message; spaced names may be concatenated or quoted |
 | `/ping` | Show Agora network stats (RTT + user count) |
 | `/space` | Change space |
 | `/crtkica` | Open / close the whiteboard (desktop only) |
@@ -45,11 +46,11 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 ?space=friday-night&name=HairyPloper       both at once
 ```
 
-**Name** is saved to `localStorage` so it persists on reload. If no name is set, a random Serbian-style funny nickname is assigned. Legacy generated `Gost_XXXX` names are upgraded automatically. Names set with `?name=` or `/nick` remain the user's preferred name.
+**Name** is saved to `localStorage` only when it is provided through `?name=` or `/nick`. Without an explicit name, a new random Serbian-style funny nickname is assigned on every page load. Funny names are displayed with spaces, while Firebase presence stores a lowercase concatenated `identityKey`, so `Znojava Rukica` and `znojavarukica` are the same identity. Legacy presence records remain compatible, and previously cached generated names are discarded automatically.
 
 **Space** isolates everything — voice channel, chat, whiteboard, and presence are all scoped per space. The active value is always shown as `Space: <name>` in the chat header. If no `?space=` is provided, the saved space is restored, falling back to the default space. Space names are case-insensitive (`Gaming`, `GAMING`, and `gaming` resolve to the same room) and accept letters, numbers, dashes and underscores only (`a-z A-Z 0-9 - _`). Serbian diacritics and spaces are stripped automatically, so stick to ASCII names.
 
-When joining voice, the preferred nickname and animal icon are claimed atomically from Firebase presence. If a custom nickname is already active in that space, the visitor receives a temporary funny nickname without losing the saved preference. `/nick` rejects names currently occupied in the same space. Names and icons can be reused independently in other spaces.
+The nickname and animal icon are claimed atomically from Firebase presence as soon as chat initializes, so chat-only users also receive unique identities. Their presence entry stays hidden from the voice grid until `voiceJoined` becomes true. Leaving voice keeps the chat reservation, while closing or disconnecting the page releases it through Firebase `onDisconnect`. If a custom nickname is already active in that space, the visitor receives a temporary funny nickname without losing the saved preference. `/nick` rejects names currently occupied in the same space. Names and icons can be reused independently in other spaces.
 
 ```
 ✅  ?space=gaming
@@ -140,6 +141,8 @@ voice_room_web/
 ## Audio settings
 
 AEC (echo cancellation), AGC (gain control), and ANS (noise suppression) can be toggled per-session from the settings menu. Choices are saved to `localStorage`. Speaker output device can also be selected after joining (desktop only).
+
+Voice users are considered active when they interact with the page or speak into the microphone. After 5 inactive minutes the chat shows a warning; after 10 minutes the normal leave flow disconnects Agora but keeps chat and its identity reservation active. Adjust `APP_CONFIG.afkTimeoutMs` and `APP_CONFIG.afkWarningMs` in `js/main.js` to change these intervals.
 
 ---
 

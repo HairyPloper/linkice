@@ -61,6 +61,7 @@ firebase.auth().onAuthStateChanged(async (user) => {
     await window.prepareIdentityForSpace();
     startChat();
     startPresenceListener();
+    window.startIdentityConnectionMonitor();
     if (window.identityNotice) {
       window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
       window.identityNotice = null;
@@ -119,7 +120,8 @@ window.appendMessage = (
 
   // Align own messages to the right and tint them green
   const isSystem = name === "Sistem" || (data && data.username === "Sistem");
-  const isMe = !isSystem && data && data.username === window.myDisplayName;
+  const isMe = !isSystem && data &&
+    window.normalizeNickname(data.username) === window.normalizeNickname(window.myDisplayName);
   msgDiv.classList.add(isSystem ? "chat-msg--system" : isMe ? "chat-msg--own" : "chat-msg--other");
   msgDiv.style.alignSelf = isMe ? "flex-end" : "flex-start";
   if (isMe) msgDiv.style.backgroundColor = "rgba(74, 222, 128, 0.1)";
@@ -703,8 +705,35 @@ function handleCommand(text) {
 
     // Send a private message visible only to sender and recipient
     case "/msg":
-      const target     = args[1];
-      const privateMsg = args.slice(2).join(" ");
+      const msgArguments = text.slice(args[0].length).trim();
+      const knownNames = [...new Set(Object.values(window.uidNameMap || {}))]
+        .filter(Boolean)
+        .sort((left, right) => right.length - left.length);
+      let target = "";
+      let privateMsg = "";
+
+      const quotedTarget = msgArguments.match(/^"([^"]+)"\s+(.+)$/);
+      if (quotedTarget) {
+        target = quotedTarget[1].trim();
+        privateMsg = quotedTarget[2].trim();
+      } else {
+        const lowerArguments = msgArguments.toLowerCase();
+        const visibleTarget = knownNames.find((name) =>
+          lowerArguments.startsWith(`${name.toLowerCase()} `),
+        );
+        const firstSpace = msgArguments.indexOf(" ");
+        const compactTarget = firstSpace === -1 ? msgArguments : msgArguments.slice(0, firstSpace);
+        const compactMatch = knownNames.find((name) =>
+          window.normalizeNickname(name) === window.normalizeNickname(compactTarget),
+        );
+
+        target = visibleTarget || compactMatch || compactTarget;
+        const consumedLength = visibleTarget
+          ? visibleTarget.length
+          : firstSpace === -1 ? msgArguments.length : firstSpace;
+        privateMsg = msgArguments.slice(consumedLength).trim();
+      }
+
       if (target && privateMsg) {
         window.chatRef.push({
           username:  window.myDisplayName,
@@ -714,7 +743,7 @@ function handleCommand(text) {
           timestamp: Date.now(),
         });
       } else {
-        window.appendMessage("Sistem", "Greška: Koristi /msg Korisnik Poruka", "#ef4444");
+        window.appendMessage("Sistem", "Greška: Koristi /msg SpojenoIme Poruka ili /msg \"Ime Sa Razmacima\" Poruka", "#ef4444");
       }
       return true;
 
@@ -729,7 +758,7 @@ function handleCommand(text) {
             <code style="color: #fbbf24;text-align: left;">/clear</code>            <span>Očisti čet</span>
             <code style="color: #fbbf24;text-align: left;">/space Naziv</code>       <span>Promeni prostor</span>
             <code style="color: #fbbf24;text-align: left;">/ping</code>             <span>Ping test Agora</span>
-            <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
+            <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Ime može spojeno ili pod navodnicima</span>
             ${isDesktop ? `<code style="color: #fbbf24;text-align: left;">/crtkica</code> <span>Otvori/zatvori crtkicu</span>` : ""}
             <code style="color: #fbbf24;text-align: left;">/bot {pitanje}</code>    <span>Postavi pitanje botu</span>
           </div>
@@ -764,8 +793,10 @@ function startChat() {
 
     // Private messages are only shown to the sender and the named recipient
     if (message.type === "private") {
-      const isMeSender = (message.username || "").toLowerCase() === (window.myDisplayName  || "").toLowerCase();
-      const isMeTarget = (message.to || "").toLowerCase()       === (window.myDisplayName  || "").toLowerCase();
+      const isMeSender = window.normalizeNickname(message.username) ===
+        window.normalizeNickname(window.myDisplayName);
+      const isMeTarget = window.normalizeNickname(message.to) ===
+        window.normalizeNickname(window.myDisplayName);
 
       if (isMeSender || isMeTarget) {
         const prefix = isMeSender
@@ -828,6 +859,10 @@ function startChat() {
       const uid  = snapshot.key;
       if (!data?.displayName) return;
       window.uidNameMap[uid] = data.displayName;
+      if (data.voiceJoined === false) {
+        document.getElementById(`user-${uid}`)?.remove();
+        return;
+      }
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
       const avatar = document.getElementById(`avatar-${uid}`);
@@ -844,6 +879,7 @@ function startPresenceListener() {
       const uid  = snap.key;
       if (!data?.displayName) return;
       window.uidNameMap[uid] = data.displayName;
+      if (data.voiceJoined === false) return;
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
     });
@@ -851,6 +887,7 @@ function startPresenceListener() {
   firebase.database()
     .ref(`presence/${window.CHANNEL}`)
     .on("child_removed", (snap) => {
+      delete window.uidNameMap[snap.key];
       const el = document.getElementById(`user-${snap.key}`);
       if (el) el.remove();
     });
