@@ -10,6 +10,7 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 - 🎙️ **Voice calls** — join/leave a persistent space with mic mute, per-user volume sliders, and speaking indicators
 - 💬 **Persistent chat** — messages stored in Firebase. Supports images, video, audio, YouTube, Spotify, and file embeds automatically from URLs
 - 🏠 **Multiple spaces** — each `?space=` URL parameter creates a fully isolated space with its own voice channel, chat history, whiteboard, and presence. Share a link like `yoursite.com?space=gaming` to invite someone into a specific space
+- 🎭 **Unique identities** — anonymous visitors receive a persistent funny nickname and animal icon; Firebase presence prevents active participants in the same space from sharing either one
 - 🖥️ **Screen sharing** — 1080p/30fps with optional system audio capture
 - 🎨 **Shared whiteboard** — real-time collaborative canvas with drawing tools and eraser, synced via Firebase
 - 🎮 **Word guessing game** — drawer picks a word, others guess via chat. 60-second timer, confetti on correct guess
@@ -44,9 +45,11 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 ?space=friday-night&name=HairyPloper       both at once
 ```
 
-**Name** is saved to `localStorage` so it persists on reload. If no name is set, a random `Gost_XXXX` is assigned.
+**Name** is saved to `localStorage` so it persists on reload. If no name is set, a random Serbian-style funny nickname is assigned. Legacy generated `Gost_XXXX` names are upgraded automatically. Names set with `?name=` or `/nick` remain the user's preferred name.
 
-**Space** isolates everything — voice channel, chat, whiteboard, and presence are all scoped per space. If no `?space=` is provided, everyone lands in the default space. Space names accept letters, numbers, dashes and underscores only (`a-z A-Z 0-9 - _`). Serbian diacritics and spaces are stripped automatically, so stick to ASCII names.
+**Space** isolates everything — voice channel, chat, whiteboard, and presence are all scoped per space. The active value is always shown as `Space: <name>` in the chat header. If no `?space=` is provided, the saved space is restored, falling back to the default space. Space names are case-insensitive (`Gaming`, `GAMING`, and `gaming` resolve to the same room) and accept letters, numbers, dashes and underscores only (`a-z A-Z 0-9 - _`). Serbian diacritics and spaces are stripped automatically, so stick to ASCII names.
+
+When joining voice, the preferred nickname and animal icon are claimed atomically from Firebase presence. If a custom nickname is already active in that space, the visitor receives a temporary funny nickname without losing the saved preference. `/nick` rejects names currently occupied in the same space. Names and icons can be reused independently in other spaces.
 
 ```
 ✅  ?space=gaming
