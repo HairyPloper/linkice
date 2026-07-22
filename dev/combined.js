@@ -117,25 +117,32 @@ function getPresenceOwner() {
   };
 }
 
-function presenceValues(presence, ownUid, owner = {}) {
+function presenceValues(presence, ownUid) {
   return Object.entries(presence || {})
-    .filter(([uid, value]) => {
-      if (String(uid) === String(ownUid)) return false;
-
-      const sameUser = !!(
-        owner.ownerUserId &&
-        value?.ownerUserId &&
-        value.ownerUserId === owner.ownerUserId
-      );
-      const sameDevice = !!(
-        owner.ownerDeviceId &&
-        value?.ownerDeviceId &&
-        value.ownerDeviceId === owner.ownerDeviceId
-      );
-      return !sameUser && !sameDevice;
-    })
+    .filter(([uid]) => String(uid) !== String(ownUid))
     .map(([, value]) => value)
     .filter(Boolean);
+}
+
+function pickFallbackName(usedNames) {
+  const freeNames = window.funnyNames.filter(
+    (name) => !usedNames.has(window.normalizeNickname(name)),
+  );
+  if (freeNames.length) return randomFrom(freeNames);
+
+  const offset = Math.floor(Math.random() * 900);
+  for (const base of window.funnyNames) {
+    for (let numberIndex = 0; numberIndex < 900; numberIndex++) {
+      const suffix = 100 + ((offset + numberIndex) % 900);
+      const candidate = `${base}_${suffix}`;
+      if (!usedNames.has(window.normalizeNickname(candidate))) return candidate;
+    }
+  }
+
+  const fallbackBase = window.funnyNames[0];
+  let extraSuffix = 1000;
+  while (usedNames.has(window.normalizeNickname(`${fallbackBase}_${extraSuffix}`))) extraSuffix++;
+  return `${fallbackBase}_${extraSuffix}`;
 }
 
 function pickFallbackIcon(usedIcons) {
@@ -157,13 +164,22 @@ function pickFallbackIcon(usedIcons) {
   return `🐾${pawSuffix}`;
 }
 
-/** Keep the display name while assigning an available icon to this session. */
-window.selectAvailableIdentity = (presence, ownUid, owner = getPresenceOwner()) => {
-  const others = presenceValues(presence, ownUid, owner);
+/** Keep custom names; make generated funny names and icons unique per session. */
+window.selectAvailableIdentity = (presence, ownUid) => {
+  const others = presenceValues(presence, ownUid);
+  const usedNames = new Set(
+    others
+      .map((entry) => window.normalizeNickname(entry.identityKey || entry.displayName))
+      .filter(Boolean),
+  );
   const usedIcons = new Set(others.map((entry) => entry.icon).filter(Boolean));
+  const preferred = window.preferredDisplayName;
+  const generatedNameOccupied =
+    window.usernameKind === "generated" &&
+    usedNames.has(window.normalizeNickname(preferred));
 
   return {
-    displayName: window.preferredDisplayName,
+    displayName: generatedNameOccupied ? pickFallbackName(usedNames) : preferred,
     icon: !usedIcons.has(window.myIcon) ? window.myIcon : pickFallbackIcon(usedIcons),
     temporaryName: false,
   };
@@ -214,7 +230,7 @@ window.claimPresenceIdentity = async (
   try {
     result = await presenceRef.transaction((currentPresence) => {
       const presence = { ...(currentPresence || {}) };
-      const selected = window.selectAvailableIdentity(presence, uid, owner);
+      const selected = window.selectAvailableIdentity(presence, uid);
       presence[String(uid)] = {
         ...(presence[String(uid)] || {}),
         displayName: selected.displayName,
