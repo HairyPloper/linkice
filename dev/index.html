@@ -104,6 +104,7 @@
 
       <!-- Chat header: toggle buttons, settings, drag handle -->
       <div id="chat-header">
+        <span id="space-name"></span>
         <span id="unread-badge" class="hidden">0</span>
         <!-- Toggle background music on/off -->
         <button
@@ -318,8 +319,14 @@
       // Global channel name used by Agora and Firebase
       window.DEFAULT_SPACE = "Linkice";
       window.SPACE_STORAGE_KEY = "activeSpace";
-      const sanitizeSpace = (value) =>
-        (value || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+      const sanitizeSpace = (value) => {
+        const sanitized = (value || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+        if (sanitized.toLowerCase() === window.DEFAULT_SPACE.toLowerCase()) {
+          return window.DEFAULT_SPACE;
+        }
+        return sanitized.toLowerCase();
+      };
+      window.sanitizeSpace = sanitizeSpace;
 
       const querySpaceRaw = new URLSearchParams(window.location.search).get("space");
       const querySpace = sanitizeSpace(querySpaceRaw);
@@ -328,6 +335,7 @@
 
       window.CHANNEL = resolvedSpace;
       localStorage.setItem(window.SPACE_STORAGE_KEY, resolvedSpace);
+      document.getElementById("space-name").textContent = `Space: ${resolvedSpace}`;
 
       const isDesktop = !/iPhone|iPad|Android/i.test(navigator.userAgent);
 
@@ -350,6 +358,6 @@
          APPLICATION SCRIPTS
          Load order matters: main → utils → ui → rtc → chat -> whiteboard → notifications
          ============================================================ -->
-    <script src="js/bundle.min.js?v=c713bb7797ad84e26f915a392cb9872a139d17da"></script>
+    <script src="js/bundle.min.js?v=db27886459fbe4cd797a1fd6ed7b1aef6ebca3b8"></script>
   </body>
 </html>

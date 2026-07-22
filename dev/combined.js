@@ -19,27 +19,51 @@ window.APP_CONFIG = {
 };
 
 // ============================================================
-// USERNAME
-// Read an optional ?name= query parameter, fall back to "Gost" (Guest).
-// A random 4-digit suffix is appended to avoid collisions when multiple
-// users share the same base name.
-// e.g. ?name=Marko  →  "Marko_4271"
+// PARTICIPANT IDENTITY
+// URL and saved names are preferred. Anonymous visitors receive a funny name;
+// Firebase presence resolves active name and icon collisions per space.
 // ============================================================
-const params   = new URLSearchParams(window.location.search);
-const queryName     = params.get("name");
-const savedUsername = localStorage.getItem("savedUsername");
+const params = new URLSearchParams(window.location.search);
+const queryName = (params.get("name") || "").trim();
+const savedUsername = (localStorage.getItem("savedUsername") || "").trim();
+const savedUsernameKind = localStorage.getItem("savedUsernameKind");
+const isLegacyGuest = (value) => /^Gost_\d+$/.test(value || "");
+
+window.funnyNames = [
+  "SvemirskaKifla", "LudiKrompir", "TajniCevap", "PospaniNindza",
+  "BrziPuz", "ZbunjeniPingvin", "KraljPaprika", "DiskoJazavac",
+  "TurboPalacinka", "MudraSarma", "LeteciToster", "NevidljiviBurek",
+  "KosmickiPasulj", "GospodinKeks", "VeseliVampir", "MisteriozniAjvar",
+  "PevajuciRobot", "ZeleniZmaj", "CudniOblak", "PlesuciKaktus",
+];
 // Separate numeric ID purely for Agora — never exposed to users
 window.myAgoraUID = Math.floor(100000 + Math.random() * 900000);
-// Display name priority: URL param → saved → random guest
-if (queryName) {
-  window.myDisplayName = queryName;
-  localStorage.setItem("savedUsername", queryName);
-} else if (savedUsername) {
-  window.myDisplayName = savedUsername;
+// Display name priority: URL param → saved → generated funny name
+window.isVoiceJoined = false;
+
+let preferredName;
+let usernameKind;
+const queryIsPropagatedLegacy =
+  queryName && isLegacyGuest(savedUsername) && queryName === savedUsername;
+
+if (queryName && !queryIsPropagatedLegacy) {
+  preferredName = queryName;
+  usernameKind = queryName === savedUsername && savedUsernameKind === "generated"
+    ? "generated"
+    : "custom";
+} else if (savedUsername && !isLegacyGuest(savedUsername)) {
+  preferredName = savedUsername;
+  usernameKind = savedUsernameKind === "generated" ? "generated" : "custom";
 } else {
-  window.myDisplayName = `Gost_${Math.floor(10000 + Math.random() * 9000)}`;
-  localStorage.setItem("savedUsername", window.myDisplayName);
+  preferredName = window.funnyNames[Math.floor(Math.random() * window.funnyNames.length)];
+  usernameKind = "generated";
 }
+
+window.preferredDisplayName = preferredName;
+window.usernameKind = usernameKind;
+window.myDisplayName = preferredName;
+localStorage.setItem("savedUsername", preferredName);
+localStorage.setItem("savedUsernameKind", usernameKind);
 
 
 // ============================================================
@@ -61,8 +85,174 @@ window.animals = [
   "🦀", "🐧", "🦜", "🦆", "🦅", "🦚", "🦋", "🐞", "🦂", "🐜",
 ];
 
-// Pick one animal at random for this session
-window.myIcon = window.animals[Math.floor(Math.random() * window.animals.length)];
+// Prefer the saved animal; collision checks can replace it for this space.
+const savedIcon = localStorage.getItem("savedIcon");
+window.myIcon = savedIcon || window.animals[Math.floor(Math.random() * window.animals.length)];
+localStorage.setItem("savedIcon", window.myIcon);
+
+function randomFrom(values) {
+  return values[Math.floor(Math.random() * values.length)];
+}
+
+function presenceValues(presence, ownUid) {
+  return Object.entries(presence || {})
+    .filter(([uid]) => String(uid) !== String(ownUid))
+    .map(([, value]) => value)
+    .filter(Boolean);
+}
+
+function pickFallbackName(usedNames) {
+  const freeNames = window.funnyNames.filter((name) => !usedNames.has(name.toLowerCase()));
+  if (freeNames.length) return randomFrom(freeNames);
+
+  const offset = Math.floor(Math.random() * 900);
+  for (const base of window.funnyNames) {
+    for (let numberIndex = 0; numberIndex < 900; numberIndex++) {
+      const suffix = 100 + ((offset + numberIndex) % 900);
+      const candidate = `${base}_${suffix}`;
+      if (!usedNames.has(candidate.toLowerCase())) return candidate;
+    }
+  }
+
+  let extraSuffix = 1000;
+  while (usedNames.has(`svemirskakifla_${extraSuffix}`)) extraSuffix++;
+  return `SvemirskaKifla_${extraSuffix}`;
+}
+
+function pickFallbackIcon(usedIcons) {
+  const freeIcons = window.animals.filter((icon) => !usedIcons.has(icon));
+  if (freeIcons.length) return randomFrom(freeIcons);
+
+  const pairCount = window.animals.length * window.animals.length;
+  const offset = Math.floor(Math.random() * pairCount);
+  for (let index = 0; index < pairCount; index++) {
+    const pairIndex = (offset + index) % pairCount;
+    const first = window.animals[Math.floor(pairIndex / window.animals.length)];
+    const second = window.animals[pairIndex % window.animals.length];
+    const candidate = `${first}${second}`;
+    if (!usedIcons.has(candidate)) return candidate;
+  }
+
+  let pawSuffix = 1;
+  while (usedIcons.has(`🐾${pawSuffix}`)) pawSuffix++;
+  return `🐾${pawSuffix}`;
+}
+
+/** Select an identity not occupied by another active participant. */
+window.selectAvailableIdentity = (presence, ownUid) => {
+  const others = presenceValues(presence, ownUid);
+  const usedNames = new Set(
+    others.map((entry) => String(entry.displayName || "").trim().toLowerCase()).filter(Boolean),
+  );
+  const usedIcons = new Set(others.map((entry) => entry.icon).filter(Boolean));
+  const preferred = window.preferredDisplayName;
+  const preferredIsFree = !usedNames.has(preferred.toLowerCase());
+
+  return {
+    displayName: preferredIsFree ? preferred : pickFallbackName(usedNames),
+    icon: !usedIcons.has(window.myIcon) ? window.myIcon : pickFallbackIcon(usedIcons),
+    temporaryName: !preferredIsFree && window.usernameKind === "custom",
+  };
+};
+
+window.applyIdentity = (identity) => {
+  const previousName = window.myDisplayName;
+  window.myDisplayName = identity.displayName;
+  window.myIcon = identity.icon;
+  localStorage.setItem("savedIcon", identity.icon);
+
+  if (window.usernameKind === "generated") {
+    window.preferredDisplayName = identity.displayName;
+    localStorage.setItem("savedUsername", identity.displayName);
+    localStorage.setItem("savedUsernameKind", "generated");
+  }
+
+  window.identityNotice = identity.temporaryName && identity.displayName !== previousName
+    ? `Nadimak **${window.preferredDisplayName}** je zauzet u ovom prostoru. Privremeno koristiš **${identity.displayName}**.`
+    : null;
+};
+
+/** Best-effort early selection so chat starts with an available identity. */
+window.prepareIdentityForSpace = async () => {
+  try {
+    const snapshot = await firebase.database().ref(`presence/${window.CHANNEL}`).once("value");
+    window.applyIdentity(window.selectAvailableIdentity(snapshot.val(), window.myAgoraUID));
+  } catch (error) {
+    console.warn("Identity check failed; it will be retried before joining voice.", error);
+  }
+};
+
+/** Atomically claim a unique name and icon in this space. */
+window.claimPresenceIdentity = async (uid) => {
+  const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
+  const result = await presenceRef.transaction((currentPresence) => {
+    const presence = { ...(currentPresence || {}) };
+    const selected = window.selectAvailableIdentity(presence, uid);
+    presence[String(uid)] = {
+      ...(presence[String(uid)] || {}),
+      displayName: selected.displayName,
+      icon: selected.icon,
+    };
+    return presence;
+  });
+
+  if (!result.committed) throw new Error("Identity claim was not committed.");
+  const claimed = result.snapshot.child(String(uid)).val();
+  const selected = {
+    displayName: claimed.displayName,
+    icon: claimed.icon,
+    temporaryName:
+      window.usernameKind === "custom" &&
+      claimed.displayName.toLowerCase() !== window.preferredDisplayName.toLowerCase(),
+  };
+  window.applyIdentity(selected);
+  await presenceRef.child(String(uid)).onDisconnect().remove();
+  return selected;
+};
+
+/** Change a nickname, rejecting case-insensitive conflicts in this space. */
+window.changeNickname = async (newNick) => {
+  const nickname = String(newNick || "").trim();
+  if (!nickname) return false;
+
+  const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
+  const ownUid = window.client?.uid || window.myAgoraUID;
+
+  if (window.isVoiceJoined) {
+    const result = await presenceRef.transaction((currentPresence) => {
+      const presence = { ...(currentPresence || {}) };
+      const occupied = presenceValues(presence, ownUid).some(
+        (entry) => String(entry.displayName || "").trim().toLowerCase() === nickname.toLowerCase(),
+      );
+      if (occupied) return;
+      presence[String(ownUid)] = {
+        ...(presence[String(ownUid)] || {}),
+        displayName: nickname,
+        icon: window.myIcon,
+      };
+      return presence;
+    });
+    if (!result.committed) return false;
+  } else {
+    const snapshot = await presenceRef.once("value");
+    const occupied = presenceValues(snapshot.val(), ownUid).some(
+      (entry) => String(entry.displayName || "").trim().toLowerCase() === nickname.toLowerCase(),
+    );
+    if (occupied) return false;
+  }
+
+  window.preferredDisplayName = nickname;
+  window.myDisplayName = nickname;
+  window.usernameKind = "custom";
+  window.identityNotice = null;
+  localStorage.setItem("savedUsername", nickname);
+  localStorage.setItem("savedUsernameKind", "custom");
+  if (window.client?.uid) {
+    window.uidNameMap[window.client.uid] = nickname;
+    window.drawUser(window.client.uid, nickname, window.myIcon, true);
+  }
+  return true;
+};
 
 // ============================================================
 // AUDIO SETTINGS
@@ -364,12 +554,12 @@ window.drawUser = (uid, username, icon, isMe = false) => {
     // Firebase callback populates uidNameMap with the real display name.
     const nameEl = existing.querySelector(".username");
     if (nameEl) {
-      const safeUsername = window.escapeHtml ? window.escapeHtml(username) : username;
-      // Only overwrite if the current text looks like a raw number (the fallback)
-    const currentText = nameEl.textContent.replace(" (Ti)", "").trim();
-    if (currentText !== username) {
-      nameEl.textContent = `${safeUsername}${isMe ? " (Ti)" : ""}`;
+      nameEl.textContent = `${username}${isMe ? " (Ti)" : ""}`;
     }
+    const avatarEl = existing.querySelector(".avatar");
+    if (avatarEl && icon) {
+      avatarEl.textContent = icon;
+      avatarEl.classList.toggle("paired-icon", !window.animals.includes(icon));
     }
     return;
   }
@@ -397,6 +587,7 @@ window.drawUser = (uid, username, icon, isMe = false) => {
   avatar.className  = "avatar";
   avatar.id         = `avatar-${uid}`; // Used by the volume-indicator listener in rtc.js
   avatar.textContent = displayIcon;
+  avatar.classList.toggle("paired-icon", !window.animals.includes(displayIcon));
 
   avatarContainer.appendChild(avatar);
   card.appendChild(avatarContainer);
@@ -404,8 +595,8 @@ window.drawUser = (uid, username, icon, isMe = false) => {
   // --- Username label ---
   const nameDiv = document.createElement("div");
   nameDiv.className = "username";
-  // Escape to prevent XSS if the username contains HTML characters
-  nameDiv.textContent = `${window.escapeHtml ? window.escapeHtml(username) : username}${isMe ? " (Ti)" : ""}`;
+  // textContent prevents HTML in user-provided names from being interpreted.
+  nameDiv.textContent = `${username}${isMe ? " (Ti)" : ""}`;
   card.appendChild(nameDiv);
 
   // --- Volume slider (remote users only) ---
@@ -900,33 +1091,30 @@ if (joinBtn) joinBtn.onclick = async () => {
       return; 
     }
 
-    // --- 2. JOIN AGORA CHANNEL ---
-    await window.client.join(window.APP_ID, window.CHANNEL, null, window.myAgoraUID);
-    client.enableAudioVolumeIndicator(200, 3);
-
-    // --- 3. PUBLISH AUDIO TRACK ---
+    // --- 2. ATOMICALLY CLAIM A UNIQUE PRESENCE IDENTITY ---
     localTracks.audioTrack = audioTrack;
+    await window.claimPresenceIdentity(window.myAgoraUID);
+    window.uidNameMap[window.myAgoraUID] = window.myDisplayName;
+    if (window.identityNotice && window.appendMessage) {
+      window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
+      window.identityNotice = null;
+    }
+
+    // --- 3. JOIN AGORA CHANNEL ---
+    await window.client.join(window.APP_ID, window.CHANNEL, null, window.myAgoraUID);
+    window.client.enableAudioVolumeIndicator(200, 3);
+
+    // --- 4. PUBLISH AUDIO TRACK ---
     startLocalVolumeMonitor(localTracks.audioTrack);
     await window.client.publish(localTracks.audioTrack);
+    window.isVoiceJoined = true;
 
-    // --- 4. UPDATE PRESENCE IN FIREBASE ---
+    // --- 5. RESTORE THE UNIQUE PRESENCE CLAIM AFTER FIREBASE RECONNECTS ---
     window.uidNameMap[window.client.uid] = window.myDisplayName;
-    const myPresenceRef = firebase.database().ref(`presence/${window.CHANNEL}/${window.client.uid}`);
-
-    // Define the presence setup logic so we can reuse it on reconnect
-    const updatePresence = () => {
-      myPresenceRef.set({ 
-        displayName: window.myDisplayName, 
-        icon: window.myIcon 
-      });
-      myPresenceRef.onDisconnect().remove();
-    };
-
-    updatePresence();
     let isFirstConnect = true;
     let reconnectTimeout = null;
     // The real-time disconnect/reconnect callback
-    firebase.database().ref(".info/connected").on("value", (snap) => {
+    firebase.database().ref(".info/connected").on("value", async (snap) => {
       const isConnected = snap.val();
       if (isConnected === false) {
         // callback on disconnect (e.g. network loss)
@@ -943,8 +1131,17 @@ if (joinBtn) joinBtn.onclick = async () => {
         if (reconnectTimeout) clearTimeout(reconnectTimeout);
         if (!isFirstConnect){
           console.log("Firebase konekcija obnovljena...");
-          //window.appendMessage("Sistem", "Konekcija firebase ponovo uspostavljena.", "#4ade80");
-          updatePresence();
+          try {
+            await window.claimPresenceIdentity(window.myAgoraUID);
+            window.uidNameMap[window.myAgoraUID] = window.myDisplayName;
+            window.drawUser(window.myAgoraUID, window.myDisplayName, window.myIcon, true);
+            if (window.identityNotice && window.appendMessage) {
+              window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
+              window.identityNotice = null;
+            }
+          } catch (error) {
+            console.error("Obnova presence identiteta nije uspela:", error);
+          }
         }else{
           // Avoid showing "connection restored" message on the initial join
           isFirstConnect = false;
@@ -955,7 +1152,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     if (window.appendMessage)
       window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#fbbf24");
 
-    // --- 5. UPDATE UI TO CONNECTED STATE ---
+    // --- 6. UPDATE UI TO CONNECTED STATE ---
     window.drawUser(window.client.uid, window.myDisplayName, window.myIcon, true);
     window.requestWakeLock();
 
@@ -975,10 +1172,16 @@ if (joinBtn) joinBtn.onclick = async () => {
   } catch (e) {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
+    window.isVoiceJoined = false;
     stopLocalVolumeMonitor();
+    if (localTracks.audioTrack) {
+      localTracks.audioTrack.stop();
+      localTracks.audioTrack.close();
+      localTracks.audioTrack = null;
+    }
     try { await window.client.leave(); } catch (_) {}
     firebase.database()
-      .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
+      .ref(`presence/${window.CHANNEL}/${window.myAgoraUID}`)
       .remove();
 
     const s = document.getElementById("status");
@@ -994,6 +1197,7 @@ if (joinBtn) joinBtn.onclick = async () => {
 // Called by the leave button — no page reload needed.
 // ============================================================
 async function leaveChannel() {
+  window.isVoiceJoined = false;
   // --- 1. WAKE LOCK ---
   if (window.wakeLock) {
     await window.wakeLock.release();
@@ -1163,14 +1367,19 @@ let selectedIndex = 0;
 // FIREBASE AUTH
 // Waits for anonymous auth before initialising the chat listener
 // ============================================================
-firebase.auth().onAuthStateChanged((user) => {
+firebase.auth().onAuthStateChanged(async (user) => {
   if (user) {
     // Chat users can receive push without joining voice: sync existing subscription on auth.
     if (window.notificationManager) {
       window.notificationManager.ensurePushSubscription(false).catch(() => {});
     }
+    await window.prepareIdentityForSpace();
     startChat();
     startPresenceListener();
+    if (window.identityNotice) {
+      window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
+      window.identityNotice = null;
+    }
     // Safety net: remove the skeleton loader after 5 s if no messages arrive
     setTimeout(() => {
       const skeleton = document.getElementById("chat-skeleton-loader");
@@ -1712,13 +1921,18 @@ function handleCommand(text) {
     case "/nick":
       const newNick = args.slice(1).join(" ");
       if (newNick) {
-        window.myDisplayName = newNick;
-        localStorage.setItem("savedUsername", newNick);
-        // Update own card in the grid
-        const nameEl = document.querySelector(`#user-${window.client?.uid} .username`);
-        if (nameEl) nameEl.textContent = `${newNick} (Ti)`;
-
-        window.appendMessage("Sistem", `Nadimak promenjen u: **${newNick}**`, "#fbbf24");
+        window.changeNickname(newNick)
+          .then((changed) => {
+            if (changed) {
+              window.appendMessage("Sistem", `Nadimak promenjen u: **${newNick}**`, "#fbbf24");
+            } else {
+              window.appendMessage("Sistem", `Nadimak **${newNick}** je već zauzet u ovom prostoru.`, "#ef4444");
+            }
+          })
+          .catch((error) => {
+            console.error("Promena nadimka nije uspela:", error);
+            window.appendMessage("Sistem", "Promena nadimka trenutno nije uspela.", "#ef4444");
+          });
       }
       return true;
 
@@ -1737,13 +1951,13 @@ function handleCommand(text) {
         window.appendMessage("Sistem", "Format: /space {naziv-prostora}", "#ef4444");
         return true;
       }
-      const spaceName = spaceArg.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+      const spaceName = window.sanitizeSpace(spaceArg);
       if (!spaceName) {
         window.appendMessage("Sistem", "Naziv prostora sadrži nedozvoljene karaktere.", "#ef4444");
         return true;
       }
       localStorage.setItem(window.SPACE_STORAGE_KEY || "activeSpace", spaceName);
-      window.location.href = `?space=${spaceName}&name=${encodeURIComponent(window.myDisplayName)}`;
+      window.location.href = `?space=${spaceName}`;
       return true;  
     case "/crtkica":
       if (/iPhone|iPad|Android/i.test(navigator.userAgent)) {
@@ -1852,7 +2066,6 @@ function startChat() {
 
   // Prepend the welcome banner (ASCII art)
   window.appendSystemHTML(welcomeArt, true);
-  window.appendSystemHTML(location.pathname, true);
 
   // Listen to the last 50 messages; also fires for each new incoming message
   window.chatRef.limitToLast(50).on("child_added", (snapshot) => {
@@ -1926,11 +2139,14 @@ function startChat() {
   firebase.database()
     .ref(`presence/${window.CHANNEL}`)
     .on("child_changed", (snapshot) => {
-      const message = snapshot.val();
+      const data = snapshot.val();
       const uid  = snapshot.key;
-      if (!message) return;
+      if (!data?.displayName) return;
+      window.uidNameMap[uid] = data.displayName;
+      const isMe = uid === String(window.myAgoraUID);
+      window.drawUser(uid, data.displayName, data.icon, isMe);
       const avatar = document.getElementById(`avatar-${uid}`);
-      if (avatar) avatar.classList.toggle("muted", message.muted === true);
+      if (avatar) avatar.classList.toggle("muted", data.muted === true);
     });
 }
 
