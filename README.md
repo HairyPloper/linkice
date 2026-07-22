@@ -18,6 +18,7 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 - 📊 **Polls** — create live multi-option polls with atomic vote counting
 - 🤖 **AI bot** — `/bot` command hits Gemini API via proxy, falls back through multiple models if rate-limited
 - 📱 **Mobile-friendly** — chat auto-collapses on join, touch-optimised controls, wake lock prevents screen sleep during calls
+- **Push notifications** — each device follows its latest visited space and receives only one alert while that space has unread messages
 
 ---
 

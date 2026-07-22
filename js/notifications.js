@@ -10,8 +10,6 @@ class NotificationManager {
     this.customIconHref = window.APP_CONFIG?.notificationIcon || "icon-192.png";
     this.badgeIconHref = window.APP_CONFIG?.notificationBadge || "notification-badge.png";
     this.isTabVisible = !document.hidden;
-    this.lastNotificationTime = 0;
-    this.notificationCooldown = 3000;
     
     this.deviceId = this.getOrCreateDeviceId();
     this.hasEnsuredPushThisSession = false;
@@ -34,6 +32,21 @@ class NotificationManager {
 
   getCurrentSpace() {
     return window.CHANNEL || window.DEFAULT_SPACE || "Linkice";
+  }
+
+  async markCurrentSpaceVisited() {
+    if (!("serviceWorker" in navigator)) return;
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const worker = navigator.serviceWorker.controller || registration.active;
+      worker?.postMessage({
+        type: "SPACE_VISITED",
+        space: this.getCurrentSpace(),
+      });
+    } catch (err) {
+      console.warn("Could not clear the space notification:", err);
+    }
   }
   
   setupVisibilityListener() {
@@ -141,6 +154,7 @@ class NotificationManager {
         scope: registration.scope,
         userAgent: navigator.userAgent,
         standalone: window.matchMedia?.("(display-mode: standalone)")?.matches || navigator.standalone === true,
+        lastVisitedAt: Date.now(),
         updatedAt: Date.now(),
       };
   
@@ -159,8 +173,10 @@ class NotificationManager {
    */
   async triggerGlobalPush(username, text) {
     try {
-      const senderName = username || "Neko";
-      const notificationText = text ? `${senderName}: ${text}` : `${senderName}: Nova poruka`;
+      const space = this.getCurrentSpace();
+      const tag = `linkice-space-${space.toLowerCase()}`;
+      const notificationTitle = `Nove poruke u ${space}`;
+      const notificationText = `Ima novih poruka u prostoru ${space}.`;
       const response = await fetch(window.APP_CONFIG?.notifyProxyUrl || 'https://my-proxy-vercel-kappa.vercel.app/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -168,9 +184,12 @@ class NotificationManager {
           senderUsername: username,
           senderUserId: firebase.auth().currentUser?.uid || null,
           senderDeviceId: this.deviceId,
-          space: this.getCurrentSpace(),
-          title: "Linkice",
+          space,
+          tag,
+          url: `?space=${encodeURIComponent(space)}`,
+          title: notificationTitle,
           message: notificationText,
+          data: { space, tag },
         })
       });
       if (!response.ok) {
@@ -193,17 +212,11 @@ class NotificationManager {
 
   incrementUnread(options = {}) {
     if (this.isTabVisible) return;
-    const { username, text, isSystem } = options;
+    const { isSystem } = options;
     if (isSystem) return;
     
     this.unreadCount++;
     this.updateNotifications();
-    
-    const now = Date.now();
-    if (username && text && (now - this.lastNotificationTime) > this.notificationCooldown) {
-      this.showBrowserNotification(username, text);
-      this.lastNotificationTime = now;
-    }
   }
   
   updateNotifications() {
@@ -213,9 +226,11 @@ class NotificationManager {
   }
   
   clearNotifications() {
-    if (this.unreadCount === 0) return;
-    this.unreadCount = 0;
-    this.updateNotifications();
+    if (this.unreadCount > 0) {
+      this.unreadCount = 0;
+      this.updateNotifications();
+    }
+    this.markCurrentSpaceVisited();
   }
   
   updateFavicon() {
@@ -257,20 +272,6 @@ class NotificationManager {
     else navigator.clearAppBadge().catch(() => {});
   }
   
-  showBrowserNotification(username, message) {
-    if (Notification.permission !== "granted" || this.isTabVisible) return;
-    const defaultSpace = window.DEFAULT_SPACE || "Linkice";
-    const currentSpace = this.getCurrentSpace();
-    const title = currentSpace === defaultSpace ? `${username} u ${defaultSpace}` : `${username} u ${currentSpace}`;
-    const notification = new Notification(title, {
-      body: message.substring(0, 80),
-      icon: this.customIconHref,
-      badge: this.badgeIconHref,
-      tag: `linkice-${currentSpace}`,
-    });
-    notification.onclick = () => { window.focus(); notification.close(); };
-    setTimeout(() => notification.close(), 4000);
-  }
 }
 
 window.notificationManager = new NotificationManager();
@@ -316,6 +317,7 @@ if ("serviceWorker" in navigator) {
 
       if (window.notificationManager) {
         await window.notificationManager.ensurePushSubscription(false);
+        await window.notificationManager.markCurrentSpaceVisited();
       }
     } catch (err) {
       console.error("❌ SW Registration failed:", err);
