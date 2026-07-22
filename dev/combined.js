@@ -138,27 +138,6 @@ function presenceValues(presence, ownUid, owner = {}) {
     .filter(Boolean);
 }
 
-function pickFallbackName(usedNames) {
-  const freeNames = window.funnyNames.filter(
-    (name) => !usedNames.has(window.normalizeNickname(name)),
-  );
-  if (freeNames.length) return randomFrom(freeNames);
-
-  const offset = Math.floor(Math.random() * 900);
-  for (const base of window.funnyNames) {
-    for (let numberIndex = 0; numberIndex < 900; numberIndex++) {
-      const suffix = 100 + ((offset + numberIndex) % 900);
-      const candidate = `${base}_${suffix}`;
-      if (!usedNames.has(window.normalizeNickname(candidate))) return candidate;
-    }
-  }
-
-  const fallbackBase = window.funnyNames[0];
-  let extraSuffix = 1000;
-  while (usedNames.has(window.normalizeNickname(`${fallbackBase}_${extraSuffix}`))) extraSuffix++;
-  return `${fallbackBase}_${extraSuffix}`;
-}
-
 function pickFallbackIcon(usedIcons) {
   const freeIcons = window.animals.filter((icon) => !usedIcons.has(icon));
   if (freeIcons.length) return randomFrom(freeIcons);
@@ -178,22 +157,15 @@ function pickFallbackIcon(usedIcons) {
   return `🐾${pawSuffix}`;
 }
 
-/** Select an identity not occupied by another active participant. */
+/** Keep the display name while assigning an available icon to this session. */
 window.selectAvailableIdentity = (presence, ownUid, owner = getPresenceOwner()) => {
   const others = presenceValues(presence, ownUid, owner);
-  const usedNames = new Set(
-    others
-      .map((entry) => window.normalizeNickname(entry.identityKey || entry.displayName))
-      .filter(Boolean),
-  );
   const usedIcons = new Set(others.map((entry) => entry.icon).filter(Boolean));
-  const preferred = window.preferredDisplayName;
-  const preferredIsFree = !usedNames.has(window.normalizeNickname(preferred));
 
   return {
-    displayName: preferredIsFree ? preferred : pickFallbackName(usedNames),
+    displayName: window.preferredDisplayName,
     icon: !usedIcons.has(window.myIcon) ? window.myIcon : pickFallbackIcon(usedIcons),
-    temporaryName: !preferredIsFree && window.usernameKind === "custom",
+    temporaryName: false,
   };
 };
 
@@ -268,10 +240,7 @@ window.claimPresenceIdentity = async (
   const selected = {
     displayName: claimed.displayName,
     icon: claimed.icon,
-    temporaryName:
-      window.usernameKind === "custom" &&
-      window.normalizeNickname(claimed.displayName) !==
-        window.normalizeNickname(window.preferredDisplayName),
+    temporaryName: false,
   };
   window.applyIdentity(selected);
   window.identityReserved = true;
@@ -311,7 +280,7 @@ window.startIdentityConnectionMonitor = () => {
   });
 };
 
-/** Change a nickname, rejecting case-insensitive conflicts in this space. */
+/** Change this session's display name; duplicate display names are allowed. */
 window.changeNickname = async (newNick) => {
   const nickname = String(newNick || "").trim();
   if (!nickname) return false;
@@ -322,11 +291,6 @@ window.changeNickname = async (newNick) => {
 
   const result = await presenceRef.transaction((currentPresence) => {
     const presence = { ...(currentPresence || {}) };
-    const occupied = presenceValues(presence, ownUid, owner).some(
-      (entry) => window.normalizeNickname(entry.identityKey || entry.displayName) ===
-        window.normalizeNickname(nickname),
-    );
-    if (occupied) return;
     presence[String(ownUid)] = {
       ...(presence[String(ownUid)] || {}),
       displayName: nickname,
@@ -1581,6 +1545,7 @@ if (chatMessages) {
 // ============================================================
 function getChatSenderMetadata() {
   return {
+    senderSessionId: String(window.myAgoraUID),
     senderUserId: firebase.auth().currentUser?.uid || null,
     senderDeviceId:
       window.notificationManager?.deviceId ||
@@ -2125,7 +2090,7 @@ function handleCommand(text) {
             if (changed) {
               window.appendMessage("Sistem", `Nadimak promenjen u: **${newNick}**`, "#fbbf24");
             } else {
-              window.appendMessage("Sistem", `Nadimak **${newNick}** je već zauzet u ovom prostoru.`, "#ef4444");
+              window.appendMessage("Sistem", "Promena nadimka trenutno nije uspela.", "#ef4444");
             }
           })
           .catch((error) => {
@@ -2248,11 +2213,46 @@ function handleCommand(text) {
       }
 
       if (target && privateMsg) {
+        const sessionSuffix = target.match(/^(.*)#(\d+)$/);
+        const targetName = (sessionSuffix ? sessionSuffix[1] : target).trim();
+        const requestedSessionId = sessionSuffix ? sessionSuffix[2] : null;
+        const matchingSessions = Object.entries(window.uidNameMap || {})
+          .filter(([, name]) =>
+            window.normalizeNickname(name) === window.normalizeNickname(targetName),
+          );
+
+        let targetSessionId = requestedSessionId;
+        if (requestedSessionId) {
+          const exactSession = matchingSessions.some(
+            ([uid]) => String(uid) === String(requestedSessionId),
+          );
+          if (!exactSession) {
+            window.appendMessage("Sistem", `Sesija **${target}** nije pronađena.`, "#ef4444");
+            return true;
+          }
+        } else if (matchingSessions.length === 1) {
+          targetSessionId = String(matchingSessions[0][0]);
+        } else if (matchingSessions.length > 1) {
+          const choices = matchingSessions
+            .map(([uid, name]) => `**${name}#${uid}**`)
+            .join(", ");
+          window.appendMessage(
+            "Sistem",
+            `Više sesija koristi ime **${targetName}**. Izaberi: ${choices}`,
+            "#ef4444",
+          );
+          return true;
+        } else {
+          window.appendMessage("Sistem", `Korisnik **${targetName}** nije prisutan.`, "#ef4444");
+          return true;
+        }
+
         window.chatRef.push({
           username:  window.myDisplayName,
           ...getChatSenderMetadata(),
           text:      privateMsg,
-          to:        target,
+          to:        targetName,
+          toSessionId: targetSessionId,
           type:      "private",
           timestamp: Date.now(),
         });
@@ -2272,7 +2272,7 @@ function handleCommand(text) {
             <code style="color: #fbbf24;text-align: left;">/clear</code>            <span>Očisti čet</span>
             <code style="color: #fbbf24;text-align: left;">/space Naziv</code>       <span>Promeni prostor</span>
             <code style="color: #fbbf24;text-align: left;">/ping</code>             <span>Ping test Agora</span>
-            <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Ime može spojeno ili pod navodnicima</span>
+            <code style="color: #fbbf24;text-align: left;">/msg {ime[#sesija]} {poruka}</code> <span>Kod duplih imena izaberi sesiju</span>
             ${isDesktop ? `<code style="color: #fbbf24;text-align: left;">/crtkica</code> <span>Otvori/zatvori crtkicu</span>` : ""}
             <code style="color: #fbbf24;text-align: left;">/bot {pitanje}</code>    <span>Postavi pitanje botu</span>
           </div>
@@ -2308,8 +2308,10 @@ function startChat() {
     // Private messages are only shown to the sender and the named recipient
     if (message.type === "private") {
       const isMeSender = window.isOwnChatMessage(message);
-      const isMeTarget = window.normalizeNickname(message.to) ===
-        window.normalizeNickname(window.myDisplayName);
+      const isMeTarget = message.toSessionId
+        ? String(message.toSessionId) === String(window.myAgoraUID)
+        : window.normalizeNickname(message.to) ===
+          window.normalizeNickname(window.myDisplayName);
 
       if (isMeSender || isMeTarget) {
         const prefix = isMeSender
@@ -2326,7 +2328,10 @@ function startChat() {
       gameRef.transaction((game) => {
         // If there's no active game, or the guess is from the drawer, or it's incorrect, abort the transaction
         if (!game || !game.active) return;
-        if ((message.username || "") === game.drawer) return;
+        const isDrawerGuess = game.drawerSessionId && message.senderSessionId
+          ? String(message.senderSessionId) === String(game.drawerSessionId)
+          : (message.username || "") === game.drawer;
+        if (isDrawerGuess) return;
         if ((message.text || "").toLowerCase().trim() !== game.word.toLowerCase()) return;
         // show to all users a confetti celebration for the correct guess
         if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
@@ -2933,6 +2938,7 @@ function initWhiteboard() {
     gameRef.set({
       word:   word,
       drawer: window.myDisplayName,
+      drawerSessionId: String(window.myAgoraUID),
       active: true,
       winner: null,
       endsAt:    TIMER_ENABLED ? Date.now() + TIMER_DURATION * 1000 : null,
@@ -2977,7 +2983,9 @@ function initWhiteboard() {
       return;
     }
 
-    const isDrawer = data.drawer === window.myDisplayName;
+    const isDrawer = data.drawerSessionId
+      ? String(data.drawerSessionId) === String(window.myAgoraUID)
+      : data.drawer === window.myDisplayName;
 
     if (!isDrawer) {
       wordDisplay.textContent = data.active
@@ -3206,7 +3214,8 @@ function initWhiteboard() {
       wordBtn.classList.remove("is-disabled");
     }
   };
-}/**
+}
+/**
  * js/notifications.js
  */
 

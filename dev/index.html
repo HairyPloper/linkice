@@ -347,7 +347,7 @@
         { cmd: "/clear", desc: "Očisti čet" },
         { cmd: "/help",  desc: "Pomoć" },
         { cmd: "/ping",  desc: "Ping test Agora" },
-        { cmd: "/msg",   desc: "Privatna poruka /msg {ime} {poruka}" },
+        { cmd: "/msg",   desc: "Privatna poruka /msg {ime[#sesija]} {poruka}" },
         { cmd: "/space", desc: "Promeni prostor /space {naziv}" },
         { cmd: "/bot",   desc: "Postavi pitanje botu /bot {pitanje}" },
         ...(isDesktop ? [{ cmd: "/crtkica", desc: "Otvori/zatvori crtkicu" }] : []),
@@ -358,6 +358,6 @@
          APPLICATION SCRIPTS
          Load order matters: main → utils → ui → rtc → chat -> whiteboard → notifications
          ============================================================ -->
-    <script src="js/bundle.min.js?v=8ff45d672d29f97bdd478f3be273c8ed9dfb69ef"></script>
+    <script src="js/bundle.min.js?v=41b7f3df02b52f92956965d75701201f7ded3eb7"></script>
   </body>
 </html>
