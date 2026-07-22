@@ -96,6 +96,39 @@ if (chatMessages) {
 // MESSAGE RENDERING
 // appendMessage — creates and appends a single chat bubble
 // ============================================================
+function getChatSenderMetadata() {
+  return {
+    senderUserId: firebase.auth().currentUser?.uid || null,
+    senderDeviceId:
+      window.notificationManager?.deviceId ||
+      localStorage.getItem("pushDeviceId") ||
+      null,
+  };
+}
+
+window.isOwnChatMessage = (data) => {
+  if (!data) return false;
+
+  const current = getChatSenderMetadata();
+  const hasStableIdentity = !!(data.senderUserId || data.senderDeviceId);
+  const sameUser = !!(
+    data.senderUserId &&
+    current.senderUserId &&
+    data.senderUserId === current.senderUserId
+  );
+  const sameDevice = !!(
+    data.senderDeviceId &&
+    current.senderDeviceId &&
+    data.senderDeviceId === current.senderDeviceId
+  );
+
+  if (hasStableIdentity) return sameUser || sameDevice;
+
+  // Legacy messages did not store stable sender metadata.
+  return window.normalizeNickname(data.username) ===
+    window.normalizeNickname(window.myDisplayName);
+};
+
 window.appendMessage = (
   name,
   text = "",
@@ -120,8 +153,7 @@ window.appendMessage = (
 
   // Align own messages to the right and tint them green
   const isSystem = name === "Sistem" || (data && data.username === "Sistem");
-  const isMe = !isSystem && data &&
-    window.normalizeNickname(data.username) === window.normalizeNickname(window.myDisplayName);
+  const isMe = !isSystem && window.isOwnChatMessage(data);
   msgDiv.classList.add(isSystem ? "chat-msg--system" : isMe ? "chat-msg--own" : "chat-msg--other");
   msgDiv.style.alignSelf = isMe ? "flex-end" : "flex-start";
   if (isMe) msgDiv.style.backgroundColor = "rgba(74, 222, 128, 0.1)";
@@ -557,15 +589,12 @@ window.sendMessage = async () => {
       await window.notificationManager.ensurePushSubscription(true);
     }
 
-    const senderUserId = firebase.auth().currentUser?.uid || null;
-    const senderDeviceId = window.notificationManager?.deviceId || null;
     const senderSpace = window.CHANNEL || "Linkice";
     await window.chatRef.push({
       username: window.myDisplayName,
       text:      text,
       color:     window.myColor || "#805ff5",
-      senderUserId: senderUserId,
-      senderDeviceId: senderDeviceId,
+      ...getChatSenderMetadata(),
       space: senderSpace,
       timestamp: Date.now(),
     });
@@ -686,6 +715,7 @@ function handleCommand(text) {
 
       window.chatRef.push({
         username:  window.myDisplayName,
+        ...getChatSenderMetadata(),
         type:      "poll",
         question:  question,
         options:   options,
@@ -737,6 +767,7 @@ function handleCommand(text) {
       if (target && privateMsg) {
         window.chatRef.push({
           username:  window.myDisplayName,
+          ...getChatSenderMetadata(),
           text:      privateMsg,
           to:        target,
           type:      "private",
@@ -793,8 +824,7 @@ function startChat() {
 
     // Private messages are only shown to the sender and the named recipient
     if (message.type === "private") {
-      const isMeSender = window.normalizeNickname(message.username) ===
-        window.normalizeNickname(window.myDisplayName);
+      const isMeSender = window.isOwnChatMessage(message);
       const isMeTarget = window.normalizeNickname(message.to) ===
         window.normalizeNickname(window.myDisplayName);
 
@@ -961,6 +991,7 @@ window.handleFileUpload = async (file) => {
     // Post the URL to chat — the media formatter will embed it appropriately
     window.chatRef.push({
       username:  window.myDisplayName,
+      ...getChatSenderMetadata(),
       text:      `Dostupno ${expiry}: ${fileUrl}`,
       timestamp: Date.now(),
     });

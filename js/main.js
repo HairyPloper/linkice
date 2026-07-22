@@ -107,9 +107,33 @@ function randomFrom(values) {
   return values[Math.floor(Math.random() * values.length)];
 }
 
-function presenceValues(presence, ownUid) {
+function getPresenceOwner() {
+  return {
+    ownerUserId: firebase.auth().currentUser?.uid || null,
+    ownerDeviceId:
+      window.notificationManager?.deviceId ||
+      localStorage.getItem("pushDeviceId") ||
+      null,
+  };
+}
+
+function presenceValues(presence, ownUid, owner = {}) {
   return Object.entries(presence || {})
-    .filter(([uid]) => String(uid) !== String(ownUid))
+    .filter(([uid, value]) => {
+      if (String(uid) === String(ownUid)) return false;
+
+      const sameUser = !!(
+        owner.ownerUserId &&
+        value?.ownerUserId &&
+        value.ownerUserId === owner.ownerUserId
+      );
+      const sameDevice = !!(
+        owner.ownerDeviceId &&
+        value?.ownerDeviceId &&
+        value.ownerDeviceId === owner.ownerDeviceId
+      );
+      return !sameUser && !sameDevice;
+    })
     .map(([, value]) => value)
     .filter(Boolean);
 }
@@ -155,8 +179,8 @@ function pickFallbackIcon(usedIcons) {
 }
 
 /** Select an identity not occupied by another active participant. */
-window.selectAvailableIdentity = (presence, ownUid) => {
-  const others = presenceValues(presence, ownUid);
+window.selectAvailableIdentity = (presence, ownUid, owner = getPresenceOwner()) => {
+  const others = presenceValues(presence, ownUid, owner);
   const usedNames = new Set(
     others
       .map((entry) => window.normalizeNickname(entry.identityKey || entry.displayName))
@@ -205,21 +229,41 @@ window.claimPresenceIdentity = async (
   { voiceJoined = window.isVoiceJoined } = {},
 ) => {
   const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
-  const result = await presenceRef.transaction((currentPresence) => {
-    const presence = { ...(currentPresence || {}) };
-    const selected = window.selectAvailableIdentity(presence, uid);
-    presence[String(uid)] = {
-      ...(presence[String(uid)] || {}),
-      displayName: selected.displayName,
-      identityKey: window.normalizeNickname(selected.displayName),
-      icon: selected.icon,
-      voiceJoined,
-      muted: voiceJoined ? (presence[String(uid)]?.muted === true) : false,
-    };
-    return presence;
-  });
+  const ownPresenceRef = presenceRef.child(String(uid));
+  const owner = getPresenceOwner();
+  const disconnectRegistration = ownPresenceRef.onDisconnect();
 
-  if (!result.committed) throw new Error("Identity claim was not committed.");
+  // Register cleanup before writing presence. Otherwise a fast reload can
+  // disconnect after the write but before onDisconnect is armed, leaving an
+  // orphaned nickname reservation in Firebase.
+  await disconnectRegistration.remove();
+
+  let result;
+  try {
+    result = await presenceRef.transaction((currentPresence) => {
+      const presence = { ...(currentPresence || {}) };
+      const selected = window.selectAvailableIdentity(presence, uid, owner);
+      presence[String(uid)] = {
+        ...(presence[String(uid)] || {}),
+        displayName: selected.displayName,
+        identityKey: window.normalizeNickname(selected.displayName),
+        icon: selected.icon,
+        ownerUserId: owner.ownerUserId,
+        ownerDeviceId: owner.ownerDeviceId,
+        voiceJoined,
+        muted: voiceJoined ? (presence[String(uid)]?.muted === true) : false,
+      };
+      return presence;
+    });
+  } catch (error) {
+    await disconnectRegistration.cancel().catch(() => {});
+    throw error;
+  }
+
+  if (!result.committed) {
+    await disconnectRegistration.cancel().catch(() => {});
+    throw new Error("Identity claim was not committed.");
+  }
   const claimed = result.snapshot.child(String(uid)).val();
   const selected = {
     displayName: claimed.displayName,
@@ -230,7 +274,6 @@ window.claimPresenceIdentity = async (
         window.normalizeNickname(window.preferredDisplayName),
   };
   window.applyIdentity(selected);
-  await presenceRef.child(String(uid)).onDisconnect().remove();
   window.identityReserved = true;
   return selected;
 };
@@ -275,10 +318,11 @@ window.changeNickname = async (newNick) => {
 
   const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
   const ownUid = window.client?.uid || window.myAgoraUID;
+  const owner = getPresenceOwner();
 
   const result = await presenceRef.transaction((currentPresence) => {
     const presence = { ...(currentPresence || {}) };
-    const occupied = presenceValues(presence, ownUid).some(
+    const occupied = presenceValues(presence, ownUid, owner).some(
       (entry) => window.normalizeNickname(entry.identityKey || entry.displayName) ===
         window.normalizeNickname(nickname),
     );
@@ -288,6 +332,8 @@ window.changeNickname = async (newNick) => {
       displayName: nickname,
       identityKey: window.normalizeNickname(nickname),
       icon: window.myIcon,
+      ownerUserId: owner.ownerUserId,
+      ownerDeviceId: owner.ownerDeviceId,
       voiceJoined: window.isVoiceJoined,
     };
     return presence;
