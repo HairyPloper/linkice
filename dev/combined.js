@@ -16,11 +16,13 @@ window.APP_CONFIG = {
   corsProxyUrl: "https://corsproxy.io/?",
   notificationIcon: "icon-192.png",
   notificationBadge: "notification-badge.png",
+  afkTimeoutMs: 10 * 60 * 1000,
+  afkWarningMs: 5 * 60 * 1000,
 };
 
 // ============================================================
 // PARTICIPANT IDENTITY
-// URL and saved names are preferred. Anonymous visitors receive a funny name;
+// URL and /nick names are saved. Anonymous funny names last for one page load;
 // Firebase presence resolves active name and icon collisions per space.
 // ============================================================
 const params = new URLSearchParams(window.location.search);
@@ -30,12 +32,18 @@ const savedUsernameKind = localStorage.getItem("savedUsernameKind");
 const isLegacyGuest = (value) => /^Gost_\d+$/.test(value || "");
 
 window.funnyNames = [
-  "ZnojavaRukica", "LudiCrnogorac", "VelikaTiba", "PospaniObrok",
-  "TeskaStoja", "PivskaPena", "LjutaPaprika", "LoseSlusalice",
-  "TurboOsiguranje", "LeviBok", "DesniBok", "NemaEnerdzi",
-  "ProkletiTutankamon", "KonjskaGlava", "SvetosavskiBal", "DikaStaka",
-  "LafPljeska", "KiflaSss", "GejKrajisnik", "ShmikShmek",
+  "Znojava Rukica", "Ludi Crnogorac", "Velika Tiba", "Pospani Obrok",
+  "Teska Stoja", "Pivska Pena", "Ljuta Paprika", "Lose Slusalice",
+  "Turbo Osiguranje", "Levi Bok", "Desni Bok", "Nema Enerdzi",
+  "Prokleti Tutankamon", "Konjska Glava", "Svetosavski Bal", "Dika Staka",
+  "Laf Pljeska", "Kifla Sss", "Gej Krajisnik", "Shmik Shmek",
 ];
+
+// Visible names may contain spaces, but identity comparisons use a compact,
+// case-insensitive key ("Znojava Rukica" and "znojavarukica" are identical).
+window.normalizeNickname = (value) =>
+  String(value || "").replace(/\s+/g, "").toLowerCase();
+
 // Separate numeric ID purely for Agora — never exposed to users
 window.myAgoraUID = Math.floor(100000 + Math.random() * 900000);
 // Display name priority: URL param → saved → generated funny name
@@ -43,17 +51,17 @@ window.isVoiceJoined = false;
 
 let preferredName;
 let usernameKind;
-const queryIsPropagatedLegacy =
-  queryName && isLegacyGuest(savedUsername) && queryName === savedUsername;
+const hasSavedCustomName = savedUsername && (
+  savedUsernameKind === "custom" ||
+  (savedUsernameKind !== "generated" && !isLegacyGuest(savedUsername))
+);
 
-if (queryName && !queryIsPropagatedLegacy) {
+if (queryName) {
   preferredName = queryName;
-  usernameKind = queryName === savedUsername && savedUsernameKind === "generated"
-    ? "generated"
-    : "custom";
-} else if (savedUsername && !isLegacyGuest(savedUsername)) {
+  usernameKind = "custom";
+} else if (hasSavedCustomName) {
   preferredName = savedUsername;
-  usernameKind = savedUsernameKind === "generated" ? "generated" : "custom";
+  usernameKind = "custom";
 } else {
   preferredName = window.funnyNames[Math.floor(Math.random() * window.funnyNames.length)];
   usernameKind = "generated";
@@ -62,8 +70,13 @@ if (queryName && !queryIsPropagatedLegacy) {
 window.preferredDisplayName = preferredName;
 window.usernameKind = usernameKind;
 window.myDisplayName = preferredName;
-localStorage.setItem("savedUsername", preferredName);
-localStorage.setItem("savedUsernameKind", usernameKind);
+if (usernameKind === "custom") {
+  localStorage.setItem("savedUsername", preferredName);
+  localStorage.setItem("savedUsernameKind", "custom");
+} else {
+  localStorage.removeItem("savedUsername");
+  localStorage.removeItem("savedUsernameKind");
+}
 
 
 // ============================================================
@@ -94,15 +107,41 @@ function randomFrom(values) {
   return values[Math.floor(Math.random() * values.length)];
 }
 
-function presenceValues(presence, ownUid) {
+function getPresenceOwner() {
+  return {
+    ownerUserId: firebase.auth().currentUser?.uid || null,
+    ownerDeviceId:
+      window.notificationManager?.deviceId ||
+      localStorage.getItem("pushDeviceId") ||
+      null,
+  };
+}
+
+function presenceValues(presence, ownUid, owner = {}) {
   return Object.entries(presence || {})
-    .filter(([uid]) => String(uid) !== String(ownUid))
+    .filter(([uid, value]) => {
+      if (String(uid) === String(ownUid)) return false;
+
+      const sameUser = !!(
+        owner.ownerUserId &&
+        value?.ownerUserId &&
+        value.ownerUserId === owner.ownerUserId
+      );
+      const sameDevice = !!(
+        owner.ownerDeviceId &&
+        value?.ownerDeviceId &&
+        value.ownerDeviceId === owner.ownerDeviceId
+      );
+      return !sameUser && !sameDevice;
+    })
     .map(([, value]) => value)
     .filter(Boolean);
 }
 
 function pickFallbackName(usedNames) {
-  const freeNames = window.funnyNames.filter((name) => !usedNames.has(name.toLowerCase()));
+  const freeNames = window.funnyNames.filter(
+    (name) => !usedNames.has(window.normalizeNickname(name)),
+  );
   if (freeNames.length) return randomFrom(freeNames);
 
   const offset = Math.floor(Math.random() * 900);
@@ -110,13 +149,14 @@ function pickFallbackName(usedNames) {
     for (let numberIndex = 0; numberIndex < 900; numberIndex++) {
       const suffix = 100 + ((offset + numberIndex) % 900);
       const candidate = `${base}_${suffix}`;
-      if (!usedNames.has(candidate.toLowerCase())) return candidate;
+      if (!usedNames.has(window.normalizeNickname(candidate))) return candidate;
     }
   }
 
+  const fallbackBase = window.funnyNames[0];
   let extraSuffix = 1000;
-  while (usedNames.has(`svemirskakifla_${extraSuffix}`)) extraSuffix++;
-  return `SvemirskaKifla_${extraSuffix}`;
+  while (usedNames.has(window.normalizeNickname(`${fallbackBase}_${extraSuffix}`))) extraSuffix++;
+  return `${fallbackBase}_${extraSuffix}`;
 }
 
 function pickFallbackIcon(usedIcons) {
@@ -139,14 +179,16 @@ function pickFallbackIcon(usedIcons) {
 }
 
 /** Select an identity not occupied by another active participant. */
-window.selectAvailableIdentity = (presence, ownUid) => {
-  const others = presenceValues(presence, ownUid);
+window.selectAvailableIdentity = (presence, ownUid, owner = getPresenceOwner()) => {
+  const others = presenceValues(presence, ownUid, owner);
   const usedNames = new Set(
-    others.map((entry) => String(entry.displayName || "").trim().toLowerCase()).filter(Boolean),
+    others
+      .map((entry) => window.normalizeNickname(entry.identityKey || entry.displayName))
+      .filter(Boolean),
   );
   const usedIcons = new Set(others.map((entry) => entry.icon).filter(Boolean));
   const preferred = window.preferredDisplayName;
-  const preferredIsFree = !usedNames.has(preferred.toLowerCase());
+  const preferredIsFree = !usedNames.has(window.normalizeNickname(preferred));
 
   return {
     displayName: preferredIsFree ? preferred : pickFallbackName(usedNames),
@@ -163,8 +205,6 @@ window.applyIdentity = (identity) => {
 
   if (window.usernameKind === "generated") {
     window.preferredDisplayName = identity.displayName;
-    localStorage.setItem("savedUsername", identity.displayName);
-    localStorage.setItem("savedUsernameKind", "generated");
   }
 
   window.identityNotice = identity.temporaryName && identity.displayName !== previousName
@@ -172,42 +212,103 @@ window.applyIdentity = (identity) => {
     : null;
 };
 
-/** Best-effort early selection so chat starts with an available identity. */
+window.identityReserved = false;
+
+/** Reserve a chat identity before chat starts. */
 window.prepareIdentityForSpace = async () => {
   try {
-    const snapshot = await firebase.database().ref(`presence/${window.CHANNEL}`).once("value");
-    window.applyIdentity(window.selectAvailableIdentity(snapshot.val(), window.myAgoraUID));
+    await window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: false });
   } catch (error) {
-    console.warn("Identity check failed; it will be retried before joining voice.", error);
+    console.warn("Identity reservation failed; it will be retried after reconnecting.", error);
   }
 };
 
 /** Atomically claim a unique name and icon in this space. */
-window.claimPresenceIdentity = async (uid) => {
+window.claimPresenceIdentity = async (
+  uid,
+  { voiceJoined = window.isVoiceJoined } = {},
+) => {
   const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
-  const result = await presenceRef.transaction((currentPresence) => {
-    const presence = { ...(currentPresence || {}) };
-    const selected = window.selectAvailableIdentity(presence, uid);
-    presence[String(uid)] = {
-      ...(presence[String(uid)] || {}),
-      displayName: selected.displayName,
-      icon: selected.icon,
-    };
-    return presence;
-  });
+  const ownPresenceRef = presenceRef.child(String(uid));
+  const owner = getPresenceOwner();
+  const disconnectRegistration = ownPresenceRef.onDisconnect();
 
-  if (!result.committed) throw new Error("Identity claim was not committed.");
+  // Register cleanup before writing presence. Otherwise a fast reload can
+  // disconnect after the write but before onDisconnect is armed, leaving an
+  // orphaned nickname reservation in Firebase.
+  await disconnectRegistration.remove();
+
+  let result;
+  try {
+    result = await presenceRef.transaction((currentPresence) => {
+      const presence = { ...(currentPresence || {}) };
+      const selected = window.selectAvailableIdentity(presence, uid, owner);
+      presence[String(uid)] = {
+        ...(presence[String(uid)] || {}),
+        displayName: selected.displayName,
+        identityKey: window.normalizeNickname(selected.displayName),
+        icon: selected.icon,
+        ownerUserId: owner.ownerUserId,
+        ownerDeviceId: owner.ownerDeviceId,
+        voiceJoined,
+        muted: voiceJoined ? (presence[String(uid)]?.muted === true) : false,
+      };
+      return presence;
+    });
+  } catch (error) {
+    await disconnectRegistration.cancel().catch(() => {});
+    throw error;
+  }
+
+  if (!result.committed) {
+    await disconnectRegistration.cancel().catch(() => {});
+    throw new Error("Identity claim was not committed.");
+  }
   const claimed = result.snapshot.child(String(uid)).val();
   const selected = {
     displayName: claimed.displayName,
     icon: claimed.icon,
     temporaryName:
       window.usernameKind === "custom" &&
-      claimed.displayName.toLowerCase() !== window.preferredDisplayName.toLowerCase(),
+      window.normalizeNickname(claimed.displayName) !==
+        window.normalizeNickname(window.preferredDisplayName),
   };
   window.applyIdentity(selected);
-  await presenceRef.child(String(uid)).onDisconnect().remove();
+  window.identityReserved = true;
   return selected;
+};
+
+/** Reclaim the page-level reservation after a Firebase disconnect. */
+window.startIdentityConnectionMonitor = () => {
+  if (window.identityConnectionMonitorStarted) return;
+  window.identityConnectionMonitorStarted = true;
+  let reconnectTimeout = null;
+
+  firebase.database().ref(".info/connected").on("value", async (snapshot) => {
+    if (snapshot.val() === false) {
+      window.identityReserved = false;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      reconnectTimeout = setTimeout(() => firebase.database().goOnline(), 5000);
+      return;
+    }
+
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+    if (window.identityReserved) return;
+
+    try {
+      await window.claimPresenceIdentity(window.myAgoraUID, {
+        voiceJoined: window.isVoiceJoined,
+      });
+      window.uidNameMap[window.myAgoraUID] = window.myDisplayName;
+      if (window.identityNotice && window.appendMessage) {
+        window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
+        window.identityNotice = null;
+      }
+    } catch (error) {
+      console.error("Presence identity could not be restored:", error);
+    }
+  });
 };
 
 /** Change a nickname, rejecting case-insensitive conflicts in this space. */
@@ -217,29 +318,27 @@ window.changeNickname = async (newNick) => {
 
   const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
   const ownUid = window.client?.uid || window.myAgoraUID;
+  const owner = getPresenceOwner();
 
-  if (window.isVoiceJoined) {
-    const result = await presenceRef.transaction((currentPresence) => {
-      const presence = { ...(currentPresence || {}) };
-      const occupied = presenceValues(presence, ownUid).some(
-        (entry) => String(entry.displayName || "").trim().toLowerCase() === nickname.toLowerCase(),
-      );
-      if (occupied) return;
-      presence[String(ownUid)] = {
-        ...(presence[String(ownUid)] || {}),
-        displayName: nickname,
-        icon: window.myIcon,
-      };
-      return presence;
-    });
-    if (!result.committed) return false;
-  } else {
-    const snapshot = await presenceRef.once("value");
-    const occupied = presenceValues(snapshot.val(), ownUid).some(
-      (entry) => String(entry.displayName || "").trim().toLowerCase() === nickname.toLowerCase(),
+  const result = await presenceRef.transaction((currentPresence) => {
+    const presence = { ...(currentPresence || {}) };
+    const occupied = presenceValues(presence, ownUid, owner).some(
+      (entry) => window.normalizeNickname(entry.identityKey || entry.displayName) ===
+        window.normalizeNickname(nickname),
     );
-    if (occupied) return false;
-  }
+    if (occupied) return;
+    presence[String(ownUid)] = {
+      ...(presence[String(ownUid)] || {}),
+      displayName: nickname,
+      identityKey: window.normalizeNickname(nickname),
+      icon: window.myIcon,
+      ownerUserId: owner.ownerUserId,
+      ownerDeviceId: owner.ownerDeviceId,
+      voiceJoined: window.isVoiceJoined,
+    };
+    return presence;
+  });
+  if (!result.committed) return false;
 
   window.preferredDisplayName = nickname;
   window.myDisplayName = nickname;
@@ -247,8 +346,8 @@ window.changeNickname = async (newNick) => {
   window.identityNotice = null;
   localStorage.setItem("savedUsername", nickname);
   localStorage.setItem("savedUsernameKind", "custom");
-  if (window.client?.uid) {
-    window.uidNameMap[window.client.uid] = nickname;
+  window.uidNameMap[ownUid] = nickname;
+  if (window.isVoiceJoined && window.client?.uid) {
     window.drawUser(window.client.uid, nickname, window.myIcon, true);
   }
   return true;
@@ -702,6 +801,99 @@ const REMOTE_SPEAKING_THRESHOLD = 8;
 let localVolumeMonitor = null;
 
 // ============================================================
+// AFK AUTO-DISCONNECT
+// Stops passive voice connections from consuming Agora minutes indefinitely.
+// User interaction and local microphone speech both count as activity.
+// ============================================================
+const configuredAfkTimeout = Number(window.APP_CONFIG?.afkTimeoutMs);
+const AFK_TIMEOUT_MS = Number.isFinite(configuredAfkTimeout) && configuredAfkTimeout > 0
+  ? configuredAfkTimeout
+  : 10 * 60 * 1000;
+const configuredAfkWarning = Number(window.APP_CONFIG?.afkWarningMs);
+const AFK_WARNING_MS = Math.min(
+  Number.isFinite(configuredAfkWarning) && configuredAfkWarning >= 0
+    ? configuredAfkWarning
+    : 5 * 60 * 1000,
+  AFK_TIMEOUT_MS,
+);
+const AFK_ACTIVITY_THROTTLE_MS = 1000;
+const AFK_MESSAGES = {
+  warning: (minutes) =>
+    `Neaktivan si. Bićeš automatski isključen iz glasovnog kanala za ${minutes} minuta.`,
+  disconnected:
+    "Isključen si iz glasovnog kanala zbog neaktivnosti. Ni leba nije džabe",
+};
+let afkWarningTimer = null;
+let afkDisconnectTimer = null;
+let lastAfkActivityAt = Date.now();
+
+function clearAfkTimers() {
+  if (afkWarningTimer) clearTimeout(afkWarningTimer);
+  if (afkDisconnectTimer) clearTimeout(afkDisconnectTimer);
+  afkWarningTimer = null;
+  afkDisconnectTimer = null;
+}
+
+function scheduleAfkTimers() {
+  clearAfkTimers();
+  if (!window.isVoiceJoined) return;
+
+  const elapsed = Date.now() - lastAfkActivityAt;
+  const warningDelay = Math.max(0, AFK_TIMEOUT_MS - AFK_WARNING_MS - elapsed);
+  const disconnectDelay = Math.max(0, AFK_TIMEOUT_MS - elapsed);
+
+  if (AFK_WARNING_MS > 0) {
+    afkWarningTimer = setTimeout(() => {
+      if (!window.isVoiceJoined) return;
+      const warningMinutes = Math.ceil(AFK_WARNING_MS / 60000);
+      if (window.appendMessage) {
+        window.appendMessage(
+          "Sistem",
+          AFK_MESSAGES.warning(warningMinutes),
+          "#fbbf24",
+        );
+      }
+    }, warningDelay);
+  }
+
+  afkDisconnectTimer = setTimeout(async () => {
+    if (!window.isVoiceJoined) return;
+    const elapsedNow = Date.now() - lastAfkActivityAt;
+    if (elapsedNow < AFK_TIMEOUT_MS) {
+      scheduleAfkTimers();
+      return;
+    }
+    try {
+      await leaveChannel("afk");
+    } catch (error) {
+      console.error("AFK auto-disconnect failed:", error);
+    }
+  }, disconnectDelay);
+}
+
+function markAfkActivity() {
+  if (!window.isVoiceJoined) return;
+  const now = Date.now();
+  if (now - lastAfkActivityAt < AFK_ACTIVITY_THROTTLE_MS) return;
+  lastAfkActivityAt = now;
+  scheduleAfkTimers();
+}
+
+function startAfkTimer() {
+  lastAfkActivityAt = Date.now();
+  scheduleAfkTimers();
+}
+
+["pointerdown", "keydown", "touchstart"].forEach((eventName) => {
+  document.addEventListener(eventName, markAfkActivity, { passive: true });
+});
+document.addEventListener("scroll", markAfkActivity, { passive: true, capture: true });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) markAfkActivity();
+});
+window.addEventListener("focus", markAfkActivity);
+
+// ============================================================
 // SHARED HELPER — resolveRemoteName
 // Returns a Promise<{name, icon}> for a remote Agora UID.
 // Always does a fresh Firebase read so it's not affected by
@@ -774,6 +966,7 @@ function startLocalVolumeMonitor(localAudioTrack) {
     if (!monitor.active) return;
     analyser.getByteFrequencyData(data);
     const avg = data.reduce((a, b) => a + b, 0) / data.length;
+    if (avg > LOCAL_SPEAKING_THRESHOLD) markAfkActivity();
     const avatar = document.getElementById(`avatar-${window.client.uid}`);
     if (!avatar) {
       monitor.frameId = requestAnimationFrame(tick);
@@ -1093,7 +1286,8 @@ if (joinBtn) joinBtn.onclick = async () => {
 
     // --- 2. ATOMICALLY CLAIM A UNIQUE PRESENCE IDENTITY ---
     localTracks.audioTrack = audioTrack;
-    await window.claimPresenceIdentity(window.myAgoraUID);
+    window.isVoiceJoined = true;
+    await window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: true });
     window.uidNameMap[window.myAgoraUID] = window.myDisplayName;
     if (window.identityNotice && window.appendMessage) {
       window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
@@ -1108,46 +1302,10 @@ if (joinBtn) joinBtn.onclick = async () => {
     startLocalVolumeMonitor(localTracks.audioTrack);
     await window.client.publish(localTracks.audioTrack);
     window.isVoiceJoined = true;
+    startAfkTimer();
 
-    // --- 5. RESTORE THE UNIQUE PRESENCE CLAIM AFTER FIREBASE RECONNECTS ---
+    // --- 5. PRESENCE IDENTITY IS NOW MARKED AS VOICE-JOINED ---
     window.uidNameMap[window.client.uid] = window.myDisplayName;
-    let isFirstConnect = true;
-    let reconnectTimeout = null;
-    // The real-time disconnect/reconnect callback
-    firebase.database().ref(".info/connected").on("value", async (snap) => {
-      const isConnected = snap.val();
-      if (isConnected === false) {
-        // callback on disconnect (e.g. network loss)
-        console.warn("Firebase konekcija prekinuta. Pokušavam rekonekciju...");
-        //window.appendMessage("Sistem", "Konekcija firebase prekinuta. Pokušavam rekonekciju...", "#ef4444");
-        // Clear any existing timeout to avoid multiple triggers
-        if (reconnectTimeout) clearTimeout(reconnectTimeout);
-        reconnectTimeout = setTimeout(() => {
-          firebase.database().goOnline();
-        }, 5000);
-
-      } else {
-        // callback on reconnect (e.g. network restored)
-        if (reconnectTimeout) clearTimeout(reconnectTimeout);
-        if (!isFirstConnect){
-          console.log("Firebase konekcija obnovljena...");
-          try {
-            await window.claimPresenceIdentity(window.myAgoraUID);
-            window.uidNameMap[window.myAgoraUID] = window.myDisplayName;
-            window.drawUser(window.myAgoraUID, window.myDisplayName, window.myIcon, true);
-            if (window.identityNotice && window.appendMessage) {
-              window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
-              window.identityNotice = null;
-            }
-          } catch (error) {
-            console.error("Obnova presence identiteta nije uspela:", error);
-          }
-        }else{
-          // Avoid showing "connection restored" message on the initial join
-          isFirstConnect = false;
-        }
-      }
-    });
       
     if (window.appendMessage)
       window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#fbbf24");
@@ -1173,6 +1331,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
     window.isVoiceJoined = false;
+    clearAfkTimers();
     stopLocalVolumeMonitor();
     if (localTracks.audioTrack) {
       localTracks.audioTrack.stop();
@@ -1180,9 +1339,11 @@ if (joinBtn) joinBtn.onclick = async () => {
       localTracks.audioTrack = null;
     }
     try { await window.client.leave(); } catch (_) {}
-    firebase.database()
-      .ref(`presence/${window.CHANNEL}/${window.myAgoraUID}`)
-      .remove();
+    try {
+      await window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: false });
+    } catch (presenceError) {
+      console.error("Chat identity could not be restored after join failure:", presenceError);
+    }
 
     const s = document.getElementById("status");
     if (s) { s.innerText = "Greška pri povezivanju"; s.style.color = "#f87171"; }
@@ -1196,78 +1357,85 @@ if (joinBtn) joinBtn.onclick = async () => {
 // Cleans up all Agora resources and resets the UI to pre-join state.
 // Called by the leave button — no page reload needed.
 // ============================================================
-async function leaveChannel() {
-  window.isVoiceJoined = false;
-  // --- 1. WAKE LOCK ---
-  if (window.wakeLock) {
-    await window.wakeLock.release();
-    window.wakeLock = null;
-  }
+let isLeavingChannel = false;
 
-  // --- 2. SCREEN SHARE ---
-  if (screenTrack) await stopScreenShare();
+async function leaveChannel(reason = "manual") {
+  if (isLeavingChannel) return;
+  isLeavingChannel = true;
+  try {
+    window.isVoiceJoined = false;
+    clearAfkTimers();
 
-  // --- 3. LOCAL AUDIO TRACK ---
-  stopLocalVolumeMonitor();
-  if (localTracks.audioTrack) {
-    localTracks.audioTrack.stop();
-    localTracks.audioTrack.close();
-    localTracks.audioTrack = null;
-  }
+    // --- 1. WAKE LOCK ---
+    if (window.wakeLock) {
+      await window.wakeLock.release();
+      window.wakeLock = null;
+    }
 
-  // --- 4. AGORA CLIENT and PRESENCE ---
-  firebase.database().ref(".info/connected").off();
-  // remove presence and disable connection listeners
-  const myPath = `presence/${window.CHANNEL}/${window.client.uid}`;
-  await firebase.database().ref(myPath).remove();
-  firebase.database().ref(myPath).onDisconnect().cancel();
+    // --- 2. SCREEN SHARE ---
+    if (screenTrack) await stopScreenShare();
 
-  // Agora leave
-  await window.client.leave();
+    // --- 3. LOCAL AUDIO TRACK ---
+    stopLocalVolumeMonitor();
+    if (localTracks.audioTrack) {
+      localTracks.audioTrack.stop();
+      localTracks.audioTrack.close();
+      localTracks.audioTrack = null;
+    }
 
-  // --- 5. RESET LOCAL STATE ---
-  isMuted = false;
-  speakingTimers.forEach((timer) => clearTimeout(timer));
-  speakingTimers.clear();
-  remoteVolumes.clear();
+    // --- 4. AGORA CLIENT and PRESENCE ---
+    await window.client.leave();
+    try {
+      await window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: false });
+    } catch (presenceError) {
+      console.error("Chat identity could not be preserved after leaving voice:", presenceError);
+    }
 
-  // --- removes stale entries
-  window.uidNameMap = {};
+    // --- 5. RESET LOCAL STATE ---
+    isMuted = false;
+    speakingTimers.forEach((timer) => clearTimeout(timer));
+    speakingTimers.clear();
+    remoteVolumes.clear();
 
+    // --- 6. BUTTONS ---
+    const leaveBtn = document.getElementById("leave-btn");
+    const joinBtn  = document.getElementById("join-btn");
+    if (leaveBtn)  leaveBtn.style.display  = "none";
+    if (screenBtn) screenBtn.style.display = "none";
+    if (joinBtn) {
+      joinBtn.style.display = "flex";
+      joinBtn.disabled = false;
+    }
 
-  // --- 7. BUTTONS ---
-  const leaveBtn = document.getElementById("leave-btn");
-  const joinBtn  = document.getElementById("join-btn");
-  if (leaveBtn)  leaveBtn.style.display  = "none";
-  if (screenBtn) screenBtn.style.display = "none";
-  if (joinBtn) {
-    joinBtn.style.display = "flex";
-    joinBtn.disabled = false;
-  }
+    // --- 7. HEADER STATUS ---
+    const status = document.getElementById("status");
+    if (status) {
+      status.innerText    = "";
+      status.style.color  = "#cbd5e1";
+    }
 
-  // --- 8. HEADER STATUS ---
-  const status = document.getElementById("status");
-  if (status) {
-    status.innerText    = "";
-    status.style.color  = "#cbd5e1";
-  }
+    // --- 8. CHAT — re-expand if collapsed on mobile after joining ---
+    if (window.chatContainer) {
+      window.chatContainer.classList.remove("collapsed");
+      document.getElementById("settings-btn").classList.remove("hidden");
+      //TODO: settings btn should show on mobile when not in a call, but it's currently tied to the chat header which is hidden when collapsed — consider moving it outside the chat container
+    }
 
-  // --- 9. CHAT — re-expand if collapsed on mobile after joining ---
-  if (window.chatContainer) {
-    window.chatContainer.classList.remove("collapsed");
-    document.getElementById("settings-btn").classList.remove("hidden");
-    //TODO: settings btn should show on mobile when not in a call, but it's currently tied to the chat header which is hidden when collapsed — consider moving it outside the chat container
-  }
-
-  // --- 10. SYSTEM MESSAGE ---
-  if (window.appendMessage) {
-    window.appendMessage("Sistem", "Izašao si iz kanala.", "#fbbf24");
+    // --- 9. SYSTEM MESSAGE ---
+    if (window.appendMessage) {
+      const leaveMessage = reason === "afk"
+        ? AFK_MESSAGES.disconnected
+        : "Izašao si iz kanala.";
+      window.appendMessage("Sistem", leaveMessage, "#fbbf24");
+    }
+  } finally {
+    isLeavingChannel = false;
   }
 }
 
 // Wire up the leave button
 const leaveBtn = document.getElementById("leave-btn");
-if (leaveBtn) leaveBtn.onclick = leaveChannel;
+if (leaveBtn) leaveBtn.onclick = () => leaveChannel("manual");
 
 
 // ============================================================
@@ -1376,6 +1544,7 @@ firebase.auth().onAuthStateChanged(async (user) => {
     await window.prepareIdentityForSpace();
     startChat();
     startPresenceListener();
+    window.startIdentityConnectionMonitor();
     if (window.identityNotice) {
       window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
       window.identityNotice = null;
@@ -1410,6 +1579,39 @@ if (chatMessages) {
 // MESSAGE RENDERING
 // appendMessage — creates and appends a single chat bubble
 // ============================================================
+function getChatSenderMetadata() {
+  return {
+    senderUserId: firebase.auth().currentUser?.uid || null,
+    senderDeviceId:
+      window.notificationManager?.deviceId ||
+      localStorage.getItem("pushDeviceId") ||
+      null,
+  };
+}
+
+window.isOwnChatMessage = (data) => {
+  if (!data) return false;
+
+  const current = getChatSenderMetadata();
+  const hasStableIdentity = !!(data.senderUserId || data.senderDeviceId);
+  const sameUser = !!(
+    data.senderUserId &&
+    current.senderUserId &&
+    data.senderUserId === current.senderUserId
+  );
+  const sameDevice = !!(
+    data.senderDeviceId &&
+    current.senderDeviceId &&
+    data.senderDeviceId === current.senderDeviceId
+  );
+
+  if (hasStableIdentity) return sameUser || sameDevice;
+
+  // Legacy messages did not store stable sender metadata.
+  return window.normalizeNickname(data.username) ===
+    window.normalizeNickname(window.myDisplayName);
+};
+
 window.appendMessage = (
   name,
   text = "",
@@ -1434,7 +1636,7 @@ window.appendMessage = (
 
   // Align own messages to the right and tint them green
   const isSystem = name === "Sistem" || (data && data.username === "Sistem");
-  const isMe = !isSystem && data && data.username === window.myDisplayName;
+  const isMe = !isSystem && window.isOwnChatMessage(data);
   msgDiv.classList.add(isSystem ? "chat-msg--system" : isMe ? "chat-msg--own" : "chat-msg--other");
   msgDiv.style.alignSelf = isMe ? "flex-end" : "flex-start";
   if (isMe) msgDiv.style.backgroundColor = "rgba(74, 222, 128, 0.1)";
@@ -1870,15 +2072,12 @@ window.sendMessage = async () => {
       await window.notificationManager.ensurePushSubscription(true);
     }
 
-    const senderUserId = firebase.auth().currentUser?.uid || null;
-    const senderDeviceId = window.notificationManager?.deviceId || null;
     const senderSpace = window.CHANNEL || "Linkice";
     await window.chatRef.push({
       username: window.myDisplayName,
       text:      text,
       color:     window.myColor || "#805ff5",
-      senderUserId: senderUserId,
-      senderDeviceId: senderDeviceId,
+      ...getChatSenderMetadata(),
       space: senderSpace,
       timestamp: Date.now(),
     });
@@ -1999,6 +2198,7 @@ function handleCommand(text) {
 
       window.chatRef.push({
         username:  window.myDisplayName,
+        ...getChatSenderMetadata(),
         type:      "poll",
         question:  question,
         options:   options,
@@ -2018,18 +2218,46 @@ function handleCommand(text) {
 
     // Send a private message visible only to sender and recipient
     case "/msg":
-      const target     = args[1];
-      const privateMsg = args.slice(2).join(" ");
+      const msgArguments = text.slice(args[0].length).trim();
+      const knownNames = [...new Set(Object.values(window.uidNameMap || {}))]
+        .filter(Boolean)
+        .sort((left, right) => right.length - left.length);
+      let target = "";
+      let privateMsg = "";
+
+      const quotedTarget = msgArguments.match(/^"([^"]+)"\s+(.+)$/);
+      if (quotedTarget) {
+        target = quotedTarget[1].trim();
+        privateMsg = quotedTarget[2].trim();
+      } else {
+        const lowerArguments = msgArguments.toLowerCase();
+        const visibleTarget = knownNames.find((name) =>
+          lowerArguments.startsWith(`${name.toLowerCase()} `),
+        );
+        const firstSpace = msgArguments.indexOf(" ");
+        const compactTarget = firstSpace === -1 ? msgArguments : msgArguments.slice(0, firstSpace);
+        const compactMatch = knownNames.find((name) =>
+          window.normalizeNickname(name) === window.normalizeNickname(compactTarget),
+        );
+
+        target = visibleTarget || compactMatch || compactTarget;
+        const consumedLength = visibleTarget
+          ? visibleTarget.length
+          : firstSpace === -1 ? msgArguments.length : firstSpace;
+        privateMsg = msgArguments.slice(consumedLength).trim();
+      }
+
       if (target && privateMsg) {
         window.chatRef.push({
           username:  window.myDisplayName,
+          ...getChatSenderMetadata(),
           text:      privateMsg,
           to:        target,
           type:      "private",
           timestamp: Date.now(),
         });
       } else {
-        window.appendMessage("Sistem", "Greška: Koristi /msg Korisnik Poruka", "#ef4444");
+        window.appendMessage("Sistem", "Greška: Koristi /msg SpojenoIme Poruka ili /msg \"Ime Sa Razmacima\" Poruka", "#ef4444");
       }
       return true;
 
@@ -2044,7 +2272,7 @@ function handleCommand(text) {
             <code style="color: #fbbf24;text-align: left;">/clear</code>            <span>Očisti čet</span>
             <code style="color: #fbbf24;text-align: left;">/space Naziv</code>       <span>Promeni prostor</span>
             <code style="color: #fbbf24;text-align: left;">/ping</code>             <span>Ping test Agora</span>
-            <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Pošalji privatnu poruku</span>
+            <code style="color: #fbbf24;text-align: left;">/msg {ime} {poruka}</code> <span>Ime može spojeno ili pod navodnicima</span>
             ${isDesktop ? `<code style="color: #fbbf24;text-align: left;">/crtkica</code> <span>Otvori/zatvori crtkicu</span>` : ""}
             <code style="color: #fbbf24;text-align: left;">/bot {pitanje}</code>    <span>Postavi pitanje botu</span>
           </div>
@@ -2079,8 +2307,9 @@ function startChat() {
 
     // Private messages are only shown to the sender and the named recipient
     if (message.type === "private") {
-      const isMeSender = (message.username || "").toLowerCase() === (window.myDisplayName  || "").toLowerCase();
-      const isMeTarget = (message.to || "").toLowerCase()       === (window.myDisplayName  || "").toLowerCase();
+      const isMeSender = window.isOwnChatMessage(message);
+      const isMeTarget = window.normalizeNickname(message.to) ===
+        window.normalizeNickname(window.myDisplayName);
 
       if (isMeSender || isMeTarget) {
         const prefix = isMeSender
@@ -2143,6 +2372,10 @@ function startChat() {
       const uid  = snapshot.key;
       if (!data?.displayName) return;
       window.uidNameMap[uid] = data.displayName;
+      if (data.voiceJoined === false) {
+        document.getElementById(`user-${uid}`)?.remove();
+        return;
+      }
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
       const avatar = document.getElementById(`avatar-${uid}`);
@@ -2159,6 +2392,7 @@ function startPresenceListener() {
       const uid  = snap.key;
       if (!data?.displayName) return;
       window.uidNameMap[uid] = data.displayName;
+      if (data.voiceJoined === false) return;
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
     });
@@ -2166,6 +2400,7 @@ function startPresenceListener() {
   firebase.database()
     .ref(`presence/${window.CHANNEL}`)
     .on("child_removed", (snap) => {
+      delete window.uidNameMap[snap.key];
       const el = document.getElementById(`user-${snap.key}`);
       if (el) el.remove();
     });
@@ -2239,6 +2474,7 @@ window.handleFileUpload = async (file) => {
     // Post the URL to chat — the media formatter will embed it appropriately
     window.chatRef.push({
       username:  window.myDisplayName,
+      ...getChatSenderMetadata(),
       text:      `Dostupno ${expiry}: ${fileUrl}`,
       timestamp: Date.now(),
     });
@@ -3257,11 +3493,10 @@ window.setupNotificationIntegration = function() {
       const result = originalAppendMessage.apply(this, arguments);
       if (isInitialLoad) return result;
       if (data && window.notificationManager) {
-        const currentUserId = firebase.auth().currentUser?.uid || null;
-        const sameUsername = data.username === window.myDisplayName;
-        const sameUserId = !!(data.senderUserId && currentUserId && data.senderUserId === currentUserId);
-        const sameDevice = !!(data.senderDeviceId && data.senderDeviceId === window.notificationManager.deviceId);
-        const isMe = sameUsername || sameUserId || sameDevice;
+        const isMe = window.isOwnChatMessage
+          ? window.isOwnChatMessage(data)
+          : window.normalizeNickname(data.username) ===
+            window.normalizeNickname(window.myDisplayName);
         if (!isMe && name !== "Sistem") {
           window.notificationManager.incrementUnread({ username: name, text: text });
         }
