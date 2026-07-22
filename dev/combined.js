@@ -30,11 +30,11 @@ const savedUsernameKind = localStorage.getItem("savedUsernameKind");
 const isLegacyGuest = (value) => /^Gost_\d+$/.test(value || "");
 
 window.funnyNames = [
-  "SvemirskaKifla", "LudiKrompir", "TajniCevap", "PospaniNindza",
-  "BrziPuz", "ZbunjeniPingvin", "KraljPaprika", "DiskoJazavac",
-  "TurboPalacinka", "MudraSarma", "LeteciToster", "NevidljiviBurek",
-  "KosmickiPasulj", "GospodinKeks", "VeseliVampir", "MisteriozniAjvar",
-  "PevajuciRobot", "ZeleniZmaj", "CudniOblak", "PlesuciKaktus",
+  "ZnojavaRukica", "LudiCrnogorac", "VelikaTiba", "PospaniObrok",
+  "TeskaStoja", "PivskaPena", "LjutaPaprika", "LoseSlusalice",
+  "TurboOsiguranje", "LeviBok", "DesniBok", "NemaEnerdzi",
+  "ProkletiTutankamon", "KonjskaGlava", "SvetosavskiBal", "DikaStaka",
+  "LafPljeska", "KiflaSss", "GejKrajisnik", "ShmikShmek",
 ];
 // Separate numeric ID purely for Agora — never exposed to users
 window.myAgoraUID = Math.floor(100000 + Math.random() * 900000);
