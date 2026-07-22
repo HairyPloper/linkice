@@ -100,10 +100,6 @@ function getChatSenderMetadata() {
   return {
     senderSessionId: String(window.myAgoraUID),
     senderUserId: firebase.auth().currentUser?.uid || null,
-    senderDeviceId:
-      window.notificationManager?.deviceId ||
-      localStorage.getItem("pushDeviceId") ||
-      null,
   };
 }
 
@@ -111,19 +107,13 @@ window.isOwnChatMessage = (data) => {
   if (!data) return false;
 
   const current = getChatSenderMetadata();
-  const hasStableIdentity = !!(data.senderUserId || data.senderDeviceId);
+  const hasStableIdentity = !!data.senderUserId;
   const sameUser = !!(
     data.senderUserId &&
     current.senderUserId &&
     data.senderUserId === current.senderUserId
   );
-  const sameDevice = !!(
-    data.senderDeviceId &&
-    current.senderDeviceId &&
-    data.senderDeviceId === current.senderDeviceId
-  );
-
-  if (hasStableIdentity) return sameUser || sameDevice;
+  if (hasStableIdentity) return sameUser;
 
   // Legacy messages did not store stable sender metadata.
   return window.normalizeNickname(data.username) ===
@@ -590,13 +580,11 @@ window.sendMessage = async () => {
       await window.notificationManager.ensurePushSubscription(true);
     }
 
-    const senderSpace = window.CHANNEL || "Linkice";
     await window.chatRef.push({
       username: window.myDisplayName,
       text:      text,
       color:     window.myColor || "#805ff5",
       ...getChatSenderMetadata(),
-      space: senderSpace,
       timestamp: Date.now(),
     });
     chatInput.value = "";

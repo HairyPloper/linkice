@@ -107,35 +107,32 @@ function randomFrom(values) {
   return values[Math.floor(Math.random() * values.length)];
 }
 
-function getPresenceOwner() {
-  return {
-    ownerUserId: firebase.auth().currentUser?.uid || null,
-    ownerDeviceId:
-      window.notificationManager?.deviceId ||
-      localStorage.getItem("pushDeviceId") ||
-      null,
-  };
-}
-
-function presenceValues(presence, ownUid, owner = {}) {
+function presenceValues(presence, ownUid) {
   return Object.entries(presence || {})
-    .filter(([uid, value]) => {
-      if (String(uid) === String(ownUid)) return false;
-
-      const sameUser = !!(
-        owner.ownerUserId &&
-        value?.ownerUserId &&
-        value.ownerUserId === owner.ownerUserId
-      );
-      const sameDevice = !!(
-        owner.ownerDeviceId &&
-        value?.ownerDeviceId &&
-        value.ownerDeviceId === owner.ownerDeviceId
-      );
-      return !sameUser && !sameDevice;
-    })
+    .filter(([uid]) => String(uid) !== String(ownUid))
     .map(([, value]) => value)
     .filter(Boolean);
+}
+
+function pickFallbackName(usedNames) {
+  const freeNames = window.funnyNames.filter(
+    (name) => !usedNames.has(window.normalizeNickname(name)),
+  );
+  if (freeNames.length) return randomFrom(freeNames);
+
+  const offset = Math.floor(Math.random() * 900);
+  for (const base of window.funnyNames) {
+    for (let numberIndex = 0; numberIndex < 900; numberIndex++) {
+      const suffix = 100 + ((offset + numberIndex) % 900);
+      const candidate = `${base}_${suffix}`;
+      if (!usedNames.has(window.normalizeNickname(candidate))) return candidate;
+    }
+  }
+
+  const fallbackBase = window.funnyNames[0];
+  let extraSuffix = 1000;
+  while (usedNames.has(window.normalizeNickname(`${fallbackBase}_${extraSuffix}`))) extraSuffix++;
+  return `${fallbackBase}_${extraSuffix}`;
 }
 
 function pickFallbackIcon(usedIcons) {
@@ -157,13 +154,22 @@ function pickFallbackIcon(usedIcons) {
   return `🐾${pawSuffix}`;
 }
 
-/** Keep the display name while assigning an available icon to this session. */
-window.selectAvailableIdentity = (presence, ownUid, owner = getPresenceOwner()) => {
-  const others = presenceValues(presence, ownUid, owner);
+/** Keep custom names; make generated funny names and icons unique per session. */
+window.selectAvailableIdentity = (presence, ownUid) => {
+  const others = presenceValues(presence, ownUid);
+  const usedNames = new Set(
+    others
+      .map((entry) => window.normalizeNickname(entry.identityKey || entry.displayName))
+      .filter(Boolean),
+  );
   const usedIcons = new Set(others.map((entry) => entry.icon).filter(Boolean));
+  const preferred = window.preferredDisplayName;
+  const generatedNameOccupied =
+    window.usernameKind === "generated" &&
+    usedNames.has(window.normalizeNickname(preferred));
 
   return {
-    displayName: window.preferredDisplayName,
+    displayName: generatedNameOccupied ? pickFallbackName(usedNames) : preferred,
     icon: !usedIcons.has(window.myIcon) ? window.myIcon : pickFallbackIcon(usedIcons),
     temporaryName: false,
   };
@@ -202,7 +208,6 @@ window.claimPresenceIdentity = async (
 ) => {
   const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
   const ownPresenceRef = presenceRef.child(String(uid));
-  const owner = getPresenceOwner();
   const disconnectRegistration = ownPresenceRef.onDisconnect();
 
   // Register cleanup before writing presence. Otherwise a fast reload can
@@ -214,14 +219,12 @@ window.claimPresenceIdentity = async (
   try {
     result = await presenceRef.transaction((currentPresence) => {
       const presence = { ...(currentPresence || {}) };
-      const selected = window.selectAvailableIdentity(presence, uid, owner);
+      const selected = window.selectAvailableIdentity(presence, uid);
       presence[String(uid)] = {
         ...(presence[String(uid)] || {}),
         displayName: selected.displayName,
         identityKey: window.normalizeNickname(selected.displayName),
         icon: selected.icon,
-        ownerUserId: owner.ownerUserId,
-        ownerDeviceId: owner.ownerDeviceId,
         voiceJoined,
         muted: voiceJoined ? (presence[String(uid)]?.muted === true) : false,
       };
@@ -257,6 +260,7 @@ window.startIdentityConnectionMonitor = () => {
     if (snapshot.val() === false) {
       window.identityReserved = false;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (window.presencePageClosing) return;
       reconnectTimeout = setTimeout(() => firebase.database().goOnline(), 5000);
       return;
     }
@@ -280,6 +284,24 @@ window.startIdentityConnectionMonitor = () => {
   });
 };
 
+// Mobile browsers can keep a refreshed/navigated page alive briefly. Closing
+// the Firebase connection on pagehide makes the server execute the already
+// armed onDisconnect removal instead of leaving the old presence session.
+window.presencePageClosing = false;
+window.addEventListener("pagehide", () => {
+  window.presencePageClosing = true;
+  window.identityReserved = false;
+  firebase.database().goOffline();
+});
+
+// Restore a page returned from the back/forward cache and reclaim presence.
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  window.presencePageClosing = false;
+  window.identityReserved = false;
+  firebase.database().goOnline();
+});
+
 /** Change this session's display name; duplicate display names are allowed. */
 window.changeNickname = async (newNick) => {
   const nickname = String(newNick || "").trim();
@@ -287,7 +309,6 @@ window.changeNickname = async (newNick) => {
 
   const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
   const ownUid = window.client?.uid || window.myAgoraUID;
-  const owner = getPresenceOwner();
 
   const result = await presenceRef.transaction((currentPresence) => {
     const presence = { ...(currentPresence || {}) };
@@ -296,8 +317,6 @@ window.changeNickname = async (newNick) => {
       displayName: nickname,
       identityKey: window.normalizeNickname(nickname),
       icon: window.myIcon,
-      ownerUserId: owner.ownerUserId,
-      ownerDeviceId: owner.ownerDeviceId,
       voiceJoined: window.isVoiceJoined,
     };
     return presence;
