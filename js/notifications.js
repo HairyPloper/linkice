@@ -286,7 +286,8 @@ window.setupNotificationIntegration = function() {
       if (isInitialLoad) return result;
       if (data && window.notificationManager) {
         const currentUserId = firebase.auth().currentUser?.uid || null;
-        const sameUsername = data.username === window.myDisplayName;
+        const sameUsername = window.normalizeNickname(data.username) ===
+          window.normalizeNickname(window.myDisplayName);
         const sameUserId = !!(data.senderUserId && currentUserId && data.senderUserId === currentUserId);
         const sameDevice = !!(data.senderDeviceId && data.senderDeviceId === window.notificationManager.deviceId);
         const isMe = sameUsername || sameUserId || sameDevice;

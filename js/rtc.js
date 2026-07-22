@@ -39,6 +39,99 @@ const REMOTE_SPEAKING_THRESHOLD = 8;
 let localVolumeMonitor = null;
 
 // ============================================================
+// AFK AUTO-DISCONNECT
+// Stops passive voice connections from consuming Agora minutes indefinitely.
+// User interaction and local microphone speech both count as activity.
+// ============================================================
+const configuredAfkTimeout = Number(window.APP_CONFIG?.afkTimeoutMs);
+const AFK_TIMEOUT_MS = Number.isFinite(configuredAfkTimeout) && configuredAfkTimeout > 0
+  ? configuredAfkTimeout
+  : 10 * 60 * 1000;
+const configuredAfkWarning = Number(window.APP_CONFIG?.afkWarningMs);
+const AFK_WARNING_MS = Math.min(
+  Number.isFinite(configuredAfkWarning) && configuredAfkWarning >= 0
+    ? configuredAfkWarning
+    : 5 * 60 * 1000,
+  AFK_TIMEOUT_MS,
+);
+const AFK_ACTIVITY_THROTTLE_MS = 1000;
+const AFK_MESSAGES = {
+  warning: (minutes) =>
+    `Neaktivan si. Bićeš automatski isključen iz glasovnog kanala za ${minutes} minuta.`,
+  disconnected:
+    "Isključen si iz glasovnog kanala zbog neaktivnosti. Ni leba nije džabe",
+};
+let afkWarningTimer = null;
+let afkDisconnectTimer = null;
+let lastAfkActivityAt = Date.now();
+
+function clearAfkTimers() {
+  if (afkWarningTimer) clearTimeout(afkWarningTimer);
+  if (afkDisconnectTimer) clearTimeout(afkDisconnectTimer);
+  afkWarningTimer = null;
+  afkDisconnectTimer = null;
+}
+
+function scheduleAfkTimers() {
+  clearAfkTimers();
+  if (!window.isVoiceJoined) return;
+
+  const elapsed = Date.now() - lastAfkActivityAt;
+  const warningDelay = Math.max(0, AFK_TIMEOUT_MS - AFK_WARNING_MS - elapsed);
+  const disconnectDelay = Math.max(0, AFK_TIMEOUT_MS - elapsed);
+
+  if (AFK_WARNING_MS > 0) {
+    afkWarningTimer = setTimeout(() => {
+      if (!window.isVoiceJoined) return;
+      const warningMinutes = Math.ceil(AFK_WARNING_MS / 60000);
+      if (window.appendMessage) {
+        window.appendMessage(
+          "Sistem",
+          AFK_MESSAGES.warning(warningMinutes),
+          "#fbbf24",
+        );
+      }
+    }, warningDelay);
+  }
+
+  afkDisconnectTimer = setTimeout(async () => {
+    if (!window.isVoiceJoined) return;
+    const elapsedNow = Date.now() - lastAfkActivityAt;
+    if (elapsedNow < AFK_TIMEOUT_MS) {
+      scheduleAfkTimers();
+      return;
+    }
+    try {
+      await leaveChannel("afk");
+    } catch (error) {
+      console.error("AFK auto-disconnect failed:", error);
+    }
+  }, disconnectDelay);
+}
+
+function markAfkActivity() {
+  if (!window.isVoiceJoined) return;
+  const now = Date.now();
+  if (now - lastAfkActivityAt < AFK_ACTIVITY_THROTTLE_MS) return;
+  lastAfkActivityAt = now;
+  scheduleAfkTimers();
+}
+
+function startAfkTimer() {
+  lastAfkActivityAt = Date.now();
+  scheduleAfkTimers();
+}
+
+["pointerdown", "keydown", "touchstart"].forEach((eventName) => {
+  document.addEventListener(eventName, markAfkActivity, { passive: true });
+});
+document.addEventListener("scroll", markAfkActivity, { passive: true, capture: true });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) markAfkActivity();
+});
+window.addEventListener("focus", markAfkActivity);
+
+// ============================================================
 // SHARED HELPER — resolveRemoteName
 // Returns a Promise<{name, icon}> for a remote Agora UID.
 // Always does a fresh Firebase read so it's not affected by
@@ -111,6 +204,7 @@ function startLocalVolumeMonitor(localAudioTrack) {
     if (!monitor.active) return;
     analyser.getByteFrequencyData(data);
     const avg = data.reduce((a, b) => a + b, 0) / data.length;
+    if (avg > LOCAL_SPEAKING_THRESHOLD) markAfkActivity();
     const avatar = document.getElementById(`avatar-${window.client.uid}`);
     if (!avatar) {
       monitor.frameId = requestAnimationFrame(tick);
@@ -430,7 +524,8 @@ if (joinBtn) joinBtn.onclick = async () => {
 
     // --- 2. ATOMICALLY CLAIM A UNIQUE PRESENCE IDENTITY ---
     localTracks.audioTrack = audioTrack;
-    await window.claimPresenceIdentity(window.myAgoraUID);
+    window.isVoiceJoined = true;
+    await window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: true });
     window.uidNameMap[window.myAgoraUID] = window.myDisplayName;
     if (window.identityNotice && window.appendMessage) {
       window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
@@ -445,46 +540,10 @@ if (joinBtn) joinBtn.onclick = async () => {
     startLocalVolumeMonitor(localTracks.audioTrack);
     await window.client.publish(localTracks.audioTrack);
     window.isVoiceJoined = true;
+    startAfkTimer();
 
-    // --- 5. RESTORE THE UNIQUE PRESENCE CLAIM AFTER FIREBASE RECONNECTS ---
+    // --- 5. PRESENCE IDENTITY IS NOW MARKED AS VOICE-JOINED ---
     window.uidNameMap[window.client.uid] = window.myDisplayName;
-    let isFirstConnect = true;
-    let reconnectTimeout = null;
-    // The real-time disconnect/reconnect callback
-    firebase.database().ref(".info/connected").on("value", async (snap) => {
-      const isConnected = snap.val();
-      if (isConnected === false) {
-        // callback on disconnect (e.g. network loss)
-        console.warn("Firebase konekcija prekinuta. Pokušavam rekonekciju...");
-        //window.appendMessage("Sistem", "Konekcija firebase prekinuta. Pokušavam rekonekciju...", "#ef4444");
-        // Clear any existing timeout to avoid multiple triggers
-        if (reconnectTimeout) clearTimeout(reconnectTimeout);
-        reconnectTimeout = setTimeout(() => {
-          firebase.database().goOnline();
-        }, 5000);
-
-      } else {
-        // callback on reconnect (e.g. network restored)
-        if (reconnectTimeout) clearTimeout(reconnectTimeout);
-        if (!isFirstConnect){
-          console.log("Firebase konekcija obnovljena...");
-          try {
-            await window.claimPresenceIdentity(window.myAgoraUID);
-            window.uidNameMap[window.myAgoraUID] = window.myDisplayName;
-            window.drawUser(window.myAgoraUID, window.myDisplayName, window.myIcon, true);
-            if (window.identityNotice && window.appendMessage) {
-              window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
-              window.identityNotice = null;
-            }
-          } catch (error) {
-            console.error("Obnova presence identiteta nije uspela:", error);
-          }
-        }else{
-          // Avoid showing "connection restored" message on the initial join
-          isFirstConnect = false;
-        }
-      }
-    });
       
     if (window.appendMessage)
       window.appendMessage("Sistem", `Povezan **${window.myDisplayName}**`, "#fbbf24");
@@ -510,6 +569,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
     window.isVoiceJoined = false;
+    clearAfkTimers();
     stopLocalVolumeMonitor();
     if (localTracks.audioTrack) {
       localTracks.audioTrack.stop();
@@ -517,9 +577,11 @@ if (joinBtn) joinBtn.onclick = async () => {
       localTracks.audioTrack = null;
     }
     try { await window.client.leave(); } catch (_) {}
-    firebase.database()
-      .ref(`presence/${window.CHANNEL}/${window.myAgoraUID}`)
-      .remove();
+    try {
+      await window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: false });
+    } catch (presenceError) {
+      console.error("Chat identity could not be restored after join failure:", presenceError);
+    }
 
     const s = document.getElementById("status");
     if (s) { s.innerText = "Greška pri povezivanju"; s.style.color = "#f87171"; }
@@ -533,78 +595,85 @@ if (joinBtn) joinBtn.onclick = async () => {
 // Cleans up all Agora resources and resets the UI to pre-join state.
 // Called by the leave button — no page reload needed.
 // ============================================================
-async function leaveChannel() {
-  window.isVoiceJoined = false;
-  // --- 1. WAKE LOCK ---
-  if (window.wakeLock) {
-    await window.wakeLock.release();
-    window.wakeLock = null;
-  }
+let isLeavingChannel = false;
 
-  // --- 2. SCREEN SHARE ---
-  if (screenTrack) await stopScreenShare();
+async function leaveChannel(reason = "manual") {
+  if (isLeavingChannel) return;
+  isLeavingChannel = true;
+  try {
+    window.isVoiceJoined = false;
+    clearAfkTimers();
 
-  // --- 3. LOCAL AUDIO TRACK ---
-  stopLocalVolumeMonitor();
-  if (localTracks.audioTrack) {
-    localTracks.audioTrack.stop();
-    localTracks.audioTrack.close();
-    localTracks.audioTrack = null;
-  }
+    // --- 1. WAKE LOCK ---
+    if (window.wakeLock) {
+      await window.wakeLock.release();
+      window.wakeLock = null;
+    }
 
-  // --- 4. AGORA CLIENT and PRESENCE ---
-  firebase.database().ref(".info/connected").off();
-  // remove presence and disable connection listeners
-  const myPath = `presence/${window.CHANNEL}/${window.client.uid}`;
-  await firebase.database().ref(myPath).remove();
-  firebase.database().ref(myPath).onDisconnect().cancel();
+    // --- 2. SCREEN SHARE ---
+    if (screenTrack) await stopScreenShare();
 
-  // Agora leave
-  await window.client.leave();
+    // --- 3. LOCAL AUDIO TRACK ---
+    stopLocalVolumeMonitor();
+    if (localTracks.audioTrack) {
+      localTracks.audioTrack.stop();
+      localTracks.audioTrack.close();
+      localTracks.audioTrack = null;
+    }
 
-  // --- 5. RESET LOCAL STATE ---
-  isMuted = false;
-  speakingTimers.forEach((timer) => clearTimeout(timer));
-  speakingTimers.clear();
-  remoteVolumes.clear();
+    // --- 4. AGORA CLIENT and PRESENCE ---
+    await window.client.leave();
+    try {
+      await window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: false });
+    } catch (presenceError) {
+      console.error("Chat identity could not be preserved after leaving voice:", presenceError);
+    }
 
-  // --- removes stale entries
-  window.uidNameMap = {};
+    // --- 5. RESET LOCAL STATE ---
+    isMuted = false;
+    speakingTimers.forEach((timer) => clearTimeout(timer));
+    speakingTimers.clear();
+    remoteVolumes.clear();
 
+    // --- 6. BUTTONS ---
+    const leaveBtn = document.getElementById("leave-btn");
+    const joinBtn  = document.getElementById("join-btn");
+    if (leaveBtn)  leaveBtn.style.display  = "none";
+    if (screenBtn) screenBtn.style.display = "none";
+    if (joinBtn) {
+      joinBtn.style.display = "flex";
+      joinBtn.disabled = false;
+    }
 
-  // --- 7. BUTTONS ---
-  const leaveBtn = document.getElementById("leave-btn");
-  const joinBtn  = document.getElementById("join-btn");
-  if (leaveBtn)  leaveBtn.style.display  = "none";
-  if (screenBtn) screenBtn.style.display = "none";
-  if (joinBtn) {
-    joinBtn.style.display = "flex";
-    joinBtn.disabled = false;
-  }
+    // --- 7. HEADER STATUS ---
+    const status = document.getElementById("status");
+    if (status) {
+      status.innerText    = "";
+      status.style.color  = "#cbd5e1";
+    }
 
-  // --- 8. HEADER STATUS ---
-  const status = document.getElementById("status");
-  if (status) {
-    status.innerText    = "";
-    status.style.color  = "#cbd5e1";
-  }
+    // --- 8. CHAT — re-expand if collapsed on mobile after joining ---
+    if (window.chatContainer) {
+      window.chatContainer.classList.remove("collapsed");
+      document.getElementById("settings-btn").classList.remove("hidden");
+      //TODO: settings btn should show on mobile when not in a call, but it's currently tied to the chat header which is hidden when collapsed — consider moving it outside the chat container
+    }
 
-  // --- 9. CHAT — re-expand if collapsed on mobile after joining ---
-  if (window.chatContainer) {
-    window.chatContainer.classList.remove("collapsed");
-    document.getElementById("settings-btn").classList.remove("hidden");
-    //TODO: settings btn should show on mobile when not in a call, but it's currently tied to the chat header which is hidden when collapsed — consider moving it outside the chat container
-  }
-
-  // --- 10. SYSTEM MESSAGE ---
-  if (window.appendMessage) {
-    window.appendMessage("Sistem", "Izašao si iz kanala.", "#fbbf24");
+    // --- 9. SYSTEM MESSAGE ---
+    if (window.appendMessage) {
+      const leaveMessage = reason === "afk"
+        ? AFK_MESSAGES.disconnected
+        : "Izašao si iz kanala.";
+      window.appendMessage("Sistem", leaveMessage, "#fbbf24");
+    }
+  } finally {
+    isLeavingChannel = false;
   }
 }
 
 // Wire up the leave button
 const leaveBtn = document.getElementById("leave-btn");
-if (leaveBtn) leaveBtn.onclick = leaveChannel;
+if (leaveBtn) leaveBtn.onclick = () => leaveChannel("manual");
 
 
 // ============================================================
