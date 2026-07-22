@@ -107,16 +107,6 @@ function randomFrom(values) {
   return values[Math.floor(Math.random() * values.length)];
 }
 
-function getPresenceOwner() {
-  return {
-    ownerUserId: firebase.auth().currentUser?.uid || null,
-    ownerDeviceId:
-      window.notificationManager?.deviceId ||
-      localStorage.getItem("pushDeviceId") ||
-      null,
-  };
-}
-
 function presenceValues(presence, ownUid) {
   return Object.entries(presence || {})
     .filter(([uid]) => String(uid) !== String(ownUid))
@@ -218,7 +208,6 @@ window.claimPresenceIdentity = async (
 ) => {
   const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
   const ownPresenceRef = presenceRef.child(String(uid));
-  const owner = getPresenceOwner();
   const disconnectRegistration = ownPresenceRef.onDisconnect();
 
   // Register cleanup before writing presence. Otherwise a fast reload can
@@ -236,8 +225,6 @@ window.claimPresenceIdentity = async (
         displayName: selected.displayName,
         identityKey: window.normalizeNickname(selected.displayName),
         icon: selected.icon,
-        ownerUserId: owner.ownerUserId,
-        ownerDeviceId: owner.ownerDeviceId,
         voiceJoined,
         muted: voiceJoined ? (presence[String(uid)]?.muted === true) : false,
       };
@@ -273,6 +260,7 @@ window.startIdentityConnectionMonitor = () => {
     if (snapshot.val() === false) {
       window.identityReserved = false;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (window.presencePageClosing) return;
       reconnectTimeout = setTimeout(() => firebase.database().goOnline(), 5000);
       return;
     }
@@ -296,6 +284,24 @@ window.startIdentityConnectionMonitor = () => {
   });
 };
 
+// Mobile browsers can keep a refreshed/navigated page alive briefly. Closing
+// the Firebase connection on pagehide makes the server execute the already
+// armed onDisconnect removal instead of leaving the old presence session.
+window.presencePageClosing = false;
+window.addEventListener("pagehide", () => {
+  window.presencePageClosing = true;
+  window.identityReserved = false;
+  firebase.database().goOffline();
+});
+
+// Restore a page returned from the back/forward cache and reclaim presence.
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  window.presencePageClosing = false;
+  window.identityReserved = false;
+  firebase.database().goOnline();
+});
+
 /** Change this session's display name; duplicate display names are allowed. */
 window.changeNickname = async (newNick) => {
   const nickname = String(newNick || "").trim();
@@ -303,7 +309,6 @@ window.changeNickname = async (newNick) => {
 
   const presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
   const ownUid = window.client?.uid || window.myAgoraUID;
-  const owner = getPresenceOwner();
 
   const result = await presenceRef.transaction((currentPresence) => {
     const presence = { ...(currentPresence || {}) };
@@ -312,8 +317,6 @@ window.changeNickname = async (newNick) => {
       displayName: nickname,
       identityKey: window.normalizeNickname(nickname),
       icon: window.myIcon,
-      ownerUserId: owner.ownerUserId,
-      ownerDeviceId: owner.ownerDeviceId,
       voiceJoined: window.isVoiceJoined,
     };
     return presence;
