@@ -10,7 +10,7 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 - 🎙️ **Voice calls** — join/leave a persistent space with mic mute, per-user volume sliders, and speaking indicators
 - 💬 **Persistent chat** — messages stored in Firebase. Supports images, video, audio, YouTube, Spotify, and file embeds automatically from URLs
 - 🏠 **Multiple spaces** — each `?space=` URL parameter creates a fully isolated space with its own voice channel, chat history, whiteboard, and presence. Share a link like `yoursite.com?space=gaming` to invite someone into a specific space
-- 🎭 **Unique identities** — anonymous visitors receive a session-only funny nickname and animal icon; Firebase presence prevents participants in the same space from sharing either one
+- 🎭 **Session identities** — every tab/device has a unique Firebase/Agora session, while display names may be shared across sessions
 - 💤 **AFK disconnect** — inactive voice listeners receive a warning after 5 minutes and automatically leave Agora after 10 minutes while remaining connected to chat
 - 🖥️ **Screen sharing** — 1080p/30fps with optional system audio capture
 - 🎨 **Shared whiteboard** — real-time collaborative canvas with drawing tools and eraser, synced via Firebase
@@ -29,7 +29,7 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 | `/poll Question , Option1 , Option2` | Create a live poll |
 | `/nick <name>` | Change your display name |
 | `/roll <max>` | Roll a random number (default 1–100) |
-| `/msg <user> <message>` | Send a private message; spaced names may be concatenated or quoted |
+| `/msg <user[#session]> <message>` | Send a private message; duplicate names are disambiguated by session ID |
 | `/ping` | Show Agora network stats (RTT + user count) |
 | `/space` | Change space |
 | `/crtkica` | Open / close the whiteboard (desktop only) |
@@ -46,11 +46,11 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 ?space=friday-night&name=HairyPloper       both at once
 ```
 
-**Name** is saved to `localStorage` only when it is provided through `?name=` or `/nick`. Without an explicit name, a new random Serbian-style funny nickname is assigned on every page load. Funny names are displayed with spaces, while Firebase presence stores a lowercase concatenated `identityKey`, so `Znojava Rukica` and `znojavarukica` are the same identity. Legacy presence records remain compatible, and previously cached generated names are discarded automatically.
+**Name** is saved to `localStorage` only when it is provided through `?name=` or `/nick`. Without an explicit name, a new random Serbian-style funny nickname is assigned on every page load. Display names are labels rather than identifiers, so multiple active sessions may use the same name. Firebase presence still stores a lowercase concatenated `identityKey` for legacy compatibility and name lookup. Previously cached generated names are discarded automatically.
 
 **Space** isolates everything — voice channel, chat, whiteboard, and presence are all scoped per space. The active value is always shown as `Space: <name>` in the chat header. If no `?space=` is provided, the saved space is restored, falling back to the default space. Space names are case-insensitive (`Gaming`, `GAMING`, and `gaming` resolve to the same room) and accept letters, numbers, dashes and underscores only (`a-z A-Z 0-9 - _`). Serbian diacritics and spaces are stripped automatically, so stick to ASCII names.
 
-The nickname and animal icon are claimed atomically from Firebase presence as soon as chat initializes, so chat-only users also receive unique identities. Presence records include the Firebase user and browser-device IDs, preventing a reconnecting page from treating its own previous record as a different participant. Firebase disconnect cleanup is armed before the presence record is written, preventing a fast reload from leaving an orphaned nickname reservation. Their presence entry stays hidden from the voice grid until `voiceJoined` becomes true. Leaving voice keeps the chat reservation, while closing or disconnecting the page releases it through Firebase `onDisconnect`. If a custom nickname is already active in that space, the visitor receives a temporary funny nickname without losing the saved preference. `/nick` rejects names currently occupied by another participant in the same space. Chat messages use the same stable sender IDs for own-message alignment, with nickname matching retained only for legacy messages. Names and icons can be reused independently in other spaces.
+Each tab/device claims an atomic, unique session entry in Firebase presence as soon as chat initializes, so chat-only users are represented too. Display names may be duplicated: a PC and phone can both appear as `Anton`, while their Firebase presence keys and Agora UIDs remain different. Presence records also include Firebase user and browser-device IDs so reconnects and own-message alignment do not depend on the mutable display name. Firebase disconnect cleanup is armed before the presence record is written, preventing a fast reload from leaving an orphaned session. The presence entry stays hidden from the voice grid until `voiceJoined` becomes true. Leaving voice keeps the chat session, while closing or disconnecting the page releases it through Firebase `onDisconnect`. When `/msg` encounters duplicate display names it lists `name#session` choices so the sender can select exactly one recipient. The whiteboard game likewise tracks its drawer by session ID. Icons may be reassigned to keep active session cards visually distinct.
 
 ```
 ✅  ?space=gaming

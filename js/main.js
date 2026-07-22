@@ -138,27 +138,6 @@ function presenceValues(presence, ownUid, owner = {}) {
     .filter(Boolean);
 }
 
-function pickFallbackName(usedNames) {
-  const freeNames = window.funnyNames.filter(
-    (name) => !usedNames.has(window.normalizeNickname(name)),
-  );
-  if (freeNames.length) return randomFrom(freeNames);
-
-  const offset = Math.floor(Math.random() * 900);
-  for (const base of window.funnyNames) {
-    for (let numberIndex = 0; numberIndex < 900; numberIndex++) {
-      const suffix = 100 + ((offset + numberIndex) % 900);
-      const candidate = `${base}_${suffix}`;
-      if (!usedNames.has(window.normalizeNickname(candidate))) return candidate;
-    }
-  }
-
-  const fallbackBase = window.funnyNames[0];
-  let extraSuffix = 1000;
-  while (usedNames.has(window.normalizeNickname(`${fallbackBase}_${extraSuffix}`))) extraSuffix++;
-  return `${fallbackBase}_${extraSuffix}`;
-}
-
 function pickFallbackIcon(usedIcons) {
   const freeIcons = window.animals.filter((icon) => !usedIcons.has(icon));
   if (freeIcons.length) return randomFrom(freeIcons);
@@ -178,22 +157,15 @@ function pickFallbackIcon(usedIcons) {
   return `🐾${pawSuffix}`;
 }
 
-/** Select an identity not occupied by another active participant. */
+/** Keep the display name while assigning an available icon to this session. */
 window.selectAvailableIdentity = (presence, ownUid, owner = getPresenceOwner()) => {
   const others = presenceValues(presence, ownUid, owner);
-  const usedNames = new Set(
-    others
-      .map((entry) => window.normalizeNickname(entry.identityKey || entry.displayName))
-      .filter(Boolean),
-  );
   const usedIcons = new Set(others.map((entry) => entry.icon).filter(Boolean));
-  const preferred = window.preferredDisplayName;
-  const preferredIsFree = !usedNames.has(window.normalizeNickname(preferred));
 
   return {
-    displayName: preferredIsFree ? preferred : pickFallbackName(usedNames),
+    displayName: window.preferredDisplayName,
     icon: !usedIcons.has(window.myIcon) ? window.myIcon : pickFallbackIcon(usedIcons),
-    temporaryName: !preferredIsFree && window.usernameKind === "custom",
+    temporaryName: false,
   };
 };
 
@@ -268,10 +240,7 @@ window.claimPresenceIdentity = async (
   const selected = {
     displayName: claimed.displayName,
     icon: claimed.icon,
-    temporaryName:
-      window.usernameKind === "custom" &&
-      window.normalizeNickname(claimed.displayName) !==
-        window.normalizeNickname(window.preferredDisplayName),
+    temporaryName: false,
   };
   window.applyIdentity(selected);
   window.identityReserved = true;
@@ -311,7 +280,7 @@ window.startIdentityConnectionMonitor = () => {
   });
 };
 
-/** Change a nickname, rejecting case-insensitive conflicts in this space. */
+/** Change this session's display name; duplicate display names are allowed. */
 window.changeNickname = async (newNick) => {
   const nickname = String(newNick || "").trim();
   if (!nickname) return false;
@@ -322,11 +291,6 @@ window.changeNickname = async (newNick) => {
 
   const result = await presenceRef.transaction((currentPresence) => {
     const presence = { ...(currentPresence || {}) };
-    const occupied = presenceValues(presence, ownUid, owner).some(
-      (entry) => window.normalizeNickname(entry.identityKey || entry.displayName) ===
-        window.normalizeNickname(nickname),
-    );
-    if (occupied) return;
     presence[String(ownUid)] = {
       ...(presence[String(ownUid)] || {}),
       displayName: nickname,

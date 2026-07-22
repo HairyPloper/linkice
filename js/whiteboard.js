@@ -138,6 +138,7 @@ function initWhiteboard() {
     gameRef.set({
       word:   word,
       drawer: window.myDisplayName,
+      drawerSessionId: String(window.myAgoraUID),
       active: true,
       winner: null,
       endsAt:    TIMER_ENABLED ? Date.now() + TIMER_DURATION * 1000 : null,
@@ -182,7 +183,9 @@ function initWhiteboard() {
       return;
     }
 
-    const isDrawer = data.drawer === window.myDisplayName;
+    const isDrawer = data.drawerSessionId
+      ? String(data.drawerSessionId) === String(window.myAgoraUID)
+      : data.drawer === window.myDisplayName;
 
     if (!isDrawer) {
       wordDisplay.textContent = data.active
