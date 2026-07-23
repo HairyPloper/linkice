@@ -122,6 +122,23 @@ function startAfkTimer() {
   scheduleAfkTimers();
 }
 
+// Read-only AFK diagnostics for testing from the browser console.
+window.getAfkStatus = () => {
+  const voiceJoined = window.isVoiceJoined === true;
+  const elapsedMs = Math.max(0, Date.now() - lastAfkActivityAt);
+
+  return {
+    voiceJoined,
+    elapsedSeconds: Math.floor(elapsedMs / 1000),
+    warningInSeconds: voiceJoined
+      ? Math.max(0, Math.ceil((AFK_TIMEOUT_MS - AFK_WARNING_MS - elapsedMs) / 1000))
+      : null,
+    disconnectInSeconds: voiceJoined
+      ? Math.max(0, Math.ceil((AFK_TIMEOUT_MS - elapsedMs) / 1000))
+      : null,
+  };
+};
+
 ["pointerdown", "keydown", "touchstart"].forEach((eventName) => {
   document.addEventListener(eventName, markAfkActivity, { passive: true });
 });

@@ -144,6 +144,8 @@ AEC (echo cancellation), AGC (gain control), and ANS (noise suppression) can be 
 
 Voice users are considered active when they interact with the page or speak into the microphone. After 5 inactive minutes the chat shows a warning; after 10 minutes the normal leave flow disconnects Agora but keeps chat and its identity reservation active. Adjust `APP_CONFIG.afkTimeoutMs` and `APP_CONFIG.afkWarningMs` in `js/main.js` to change these intervals.
 
+For live timer diagnostics, run `window.getAfkStatus()` in the browser console. To watch it update every second, run `window.afkWatch = setInterval(() => console.table(window.getAfkStatus()), 1000)`. Stop watching with `clearInterval(window.afkWatch)`.
+
 ---
 
 ## Browser support
