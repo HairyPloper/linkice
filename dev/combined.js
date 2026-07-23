@@ -785,7 +785,7 @@ let localVolumeMonitor = null;
 
 // ============================================================
 // AFK AUTO-DISCONNECT
-// Stops passive voice connections from consuming Agora minutes indefinitely.
+// Stops a voice connection from consuming Agora minutes while its user is alone.
 // User interaction and local microphone speech both count as activity.
 // ============================================================
 const configuredAfkTimeout = Number(window.APP_CONFIG?.afkTimeoutMs);
@@ -810,6 +810,13 @@ let afkWarningTimer = null;
 let afkDisconnectTimer = null;
 let lastAfkActivityAt = Date.now();
 
+function isSoloVoiceUser(excludingUid = null) {
+  const remoteUsers = window.client?.remoteUsers || [];
+  return !remoteUsers.some((user) =>
+    user.uid !== window.client?.uid && user.uid !== excludingUid
+  );
+}
+
 function clearAfkTimers() {
   if (afkWarningTimer) clearTimeout(afkWarningTimer);
   if (afkDisconnectTimer) clearTimeout(afkDisconnectTimer);
@@ -819,7 +826,7 @@ function clearAfkTimers() {
 
 function scheduleAfkTimers() {
   clearAfkTimers();
-  if (!window.isVoiceJoined) return;
+  if (!window.isVoiceJoined || !isSoloVoiceUser()) return;
 
   const elapsed = Date.now() - lastAfkActivityAt;
   const warningDelay = Math.max(0, AFK_TIMEOUT_MS - AFK_WARNING_MS - elapsed);
@@ -827,7 +834,7 @@ function scheduleAfkTimers() {
 
   if (AFK_WARNING_MS > 0) {
     afkWarningTimer = setTimeout(() => {
-      if (!window.isVoiceJoined) return;
+      if (!window.isVoiceJoined || !isSoloVoiceUser()) return;
       const warningMinutes = Math.ceil(AFK_WARNING_MS / 60000);
       if (window.appendMessage) {
         window.appendMessage(
@@ -840,7 +847,7 @@ function scheduleAfkTimers() {
   }
 
   afkDisconnectTimer = setTimeout(async () => {
-    if (!window.isVoiceJoined) return;
+    if (!window.isVoiceJoined || !isSoloVoiceUser()) return;
     const elapsedNow = Date.now() - lastAfkActivityAt;
     if (elapsedNow < AFK_TIMEOUT_MS) {
       scheduleAfkTimers();
@@ -855,7 +862,7 @@ function scheduleAfkTimers() {
 }
 
 function markAfkActivity() {
-  if (!window.isVoiceJoined) return;
+  if (!window.isVoiceJoined || !isSoloVoiceUser()) return;
   const now = Date.now();
   if (now - lastAfkActivityAt < AFK_ACTIVITY_THROTTLE_MS) return;
   lastAfkActivityAt = now;
@@ -870,15 +877,17 @@ function startAfkTimer() {
 // Read-only AFK diagnostics for testing from the browser console.
 window.getAfkStatus = () => {
   const voiceJoined = window.isVoiceJoined === true;
+  const solo = voiceJoined && isSoloVoiceUser();
   const elapsedMs = Math.max(0, Date.now() - lastAfkActivityAt);
 
   return {
     voiceJoined,
+    solo,
     elapsedSeconds: Math.floor(elapsedMs / 1000),
-    warningInSeconds: voiceJoined
+    warningInSeconds: solo
       ? Math.max(0, Math.ceil((AFK_TIMEOUT_MS - AFK_WARNING_MS - elapsedMs) / 1000))
       : null,
-    disconnectInSeconds: voiceJoined
+    disconnectInSeconds: solo
       ? Math.max(0, Math.ceil((AFK_TIMEOUT_MS - elapsedMs) / 1000))
       : null,
   };
@@ -1169,6 +1178,8 @@ window.client.on("user-left", (user) => {
   const displayName = window.getDisplayName(user.uid);
   delete window.uidNameMap[user.uid];
   remoteVolumes.delete(String(user.uid));
+  // Start fresh only when this departure leaves the local user alone.
+  if (window.isVoiceJoined && isSoloVoiceUser(user.uid)) startAfkTimer();
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
@@ -1181,6 +1192,8 @@ window.client.on("user-left", (user) => {
  * and plays a higher tone to signal arrival.
  */
 window.client.on("user-joined", async (user) => {
+  // The AFK countdown applies only while no other voice user is present.
+  clearAfkTimers();
   const { name, icon } = await resolveRemoteName(user.uid);
   // Idempotent recovery path: Firebase normally creates the card, but an
   // Agora reconnect must also restore it if an earlier event removed it.
