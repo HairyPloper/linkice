@@ -16,8 +16,8 @@ window.APP_CONFIG = {
   corsProxyUrl: "https://corsproxy.io/?",
   notificationIcon: "icon-192.png",
   notificationBadge: "notification-badge.png",
-  afkTimeoutMs: 10 * 60 * 1000,
-  afkWarningMs: 5 * 60 * 1000,
+  afkTimeoutMs: 30 * 60 * 1000,
+  afkWarningMs: 15 * 60 * 1000,
 };
 
 // ============================================================
@@ -779,7 +779,8 @@ const SCREEN_SHARE_AUDIO_GAIN = 0.18;
 // Keep the UI volume stable when Agora republishes/replaces a remote track.
 const remoteVolumes = new Map();
 
-const LOCAL_SPEAKING_THRESHOLD = 14;
+const LOCAL_TRACK_SPEAKING_THRESHOLD = 0.08;
+const LOCAL_VOLUME_POLL_MS = 250;
 const REMOTE_SPEAKING_THRESHOLD = 8;
 let localVolumeMonitor = null;
 
@@ -810,6 +811,10 @@ let afkWarningTimer = null;
 let afkDisconnectTimer = null;
 let lastAfkActivityAt = Date.now();
 
+function isSoloInVoiceChannel() {
+  return (window.client?.remoteUsers?.length || 0) === 0;
+}
+
 function clearAfkTimers() {
   if (afkWarningTimer) clearTimeout(afkWarningTimer);
   if (afkDisconnectTimer) clearTimeout(afkDisconnectTimer);
@@ -819,7 +824,7 @@ function clearAfkTimers() {
 
 function scheduleAfkTimers() {
   clearAfkTimers();
-  if (!window.isVoiceJoined) return;
+  if (!window.isVoiceJoined || !isSoloInVoiceChannel()) return;
 
   const elapsed = Date.now() - lastAfkActivityAt;
   const warningDelay = Math.max(0, AFK_TIMEOUT_MS - AFK_WARNING_MS - elapsed);
@@ -827,20 +832,20 @@ function scheduleAfkTimers() {
 
   if (AFK_WARNING_MS > 0) {
     afkWarningTimer = setTimeout(() => {
-      if (!window.isVoiceJoined) return;
+      if (!window.isVoiceJoined || !isSoloInVoiceChannel()) return;
       const warningMinutes = Math.ceil(AFK_WARNING_MS / 60000);
       if (window.appendMessage) {
         window.appendMessage(
           "Sistem",
           AFK_MESSAGES.warning(warningMinutes),
           "#fbbf24",
-        );
+        )
       }
     }, warningDelay);
   }
 
   afkDisconnectTimer = setTimeout(async () => {
-    if (!window.isVoiceJoined) return;
+    if (!window.isVoiceJoined || !isSoloInVoiceChannel()) return;
     const elapsedNow = Date.now() - lastAfkActivityAt;
     if (elapsedNow < AFK_TIMEOUT_MS) {
       scheduleAfkTimers();
@@ -865,6 +870,22 @@ function markAfkActivity() {
 function startAfkTimer() {
   lastAfkActivityAt = Date.now();
   scheduleAfkTimers();
+}
+
+function syncAfkTimerWithOccupancy({ remoteJoined = false, leavingUid = null } = {}) {
+  const remainingRemoteUsers = (window.client?.remoteUsers || []).filter(
+    (user) => String(user.uid) !== String(leavingUid),
+  );
+
+  // Event ordering differs between Agora SDK releases, so use the event itself
+  // instead of assuming remoteUsers has already been updated.
+  if (!window.isVoiceJoined || remoteJoined || remainingRemoteUsers.length > 0) {
+    clearAfkTimers();
+    return;
+  }
+
+  // Becoming solo starts a fresh inactivity period.
+  startAfkTimer();
 }
 
 ["pointerdown", "keydown", "touchstart"].forEach((eventName) => {
@@ -913,50 +934,41 @@ async function resolveRemoteName(uid) {
 function stopLocalVolumeMonitor() {
   if (!localVolumeMonitor) return;
   localVolumeMonitor.active = false;
-  if (localVolumeMonitor.frameId) {
-    cancelAnimationFrame(localVolumeMonitor.frameId);
+  if (localVolumeMonitor.intervalId) {
+    clearInterval(localVolumeMonitor.intervalId);
   }
   if (localVolumeMonitor.silenceTimer) {
     clearTimeout(localVolumeMonitor.silenceTimer);
   }
-  localVolumeMonitor.ctx.close?.().catch(() => {});
   document.getElementById(`avatar-${window.client.uid}`)?.classList.remove("speaking");
   localVolumeMonitor = null;
 }
 
 function startLocalVolumeMonitor(localAudioTrack) {
   stopLocalVolumeMonitor();
-  const stream = new MediaStream([localAudioTrack.getMediaStreamTrack()]);
-  const ctx = new AudioContext();
-  const source = ctx.createMediaStreamSource(stream);
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.3;
-  source.connect(analyser);
-
-  const data = new Uint8Array(analyser.frequencyBinCount);
   let silenceTimer = null;
   const DEACTIVATE_DELAY = 600;
   const monitor = {
     active: true,
-    ctx,
-    frameId: null,
+    intervalId: null,
     silenceTimer: null,
   };
   localVolumeMonitor = monitor;
 
-  (function tick() {
+  const tick = () => {
     if (!monitor.active) return;
-    analyser.getByteFrequencyData(data);
-    const avg = data.reduce((a, b) => a + b, 0) / data.length;
-    if (avg > LOCAL_SPEAKING_THRESHOLD) markAfkActivity();
-    const avatar = document.getElementById(`avatar-${window.client.uid}`);
-    if (!avatar) {
-      monitor.frameId = requestAnimationFrame(tick);
-      return;
-    }
+    // Use Agora's track meter instead of a separate AudioContext. Browsers can
+    // suspend Web Audio contexts in quiet/background tabs even while the
+    // microphone track is still being published, which made real speech look
+    // like AFK silence after the warning had appeared.
+    const level = Number(localAudioTrack.getVolumeLevel?.()) || 0;
+    const isSpeaking = !isMuted && level > LOCAL_TRACK_SPEAKING_THRESHOLD;
+    if (isSpeaking) markAfkActivity();
 
-    if (avg > LOCAL_SPEAKING_THRESHOLD) {
+    const avatar = document.getElementById(`avatar-${window.client.uid}`);
+    if (!avatar) return;
+
+    if (isSpeaking) {
       avatar.classList.add("speaking");
       if (silenceTimer) {
         clearTimeout(silenceTimer);
@@ -974,9 +986,10 @@ function startLocalVolumeMonitor(localAudioTrack) {
         monitor.silenceTimer = silenceTimer;
       }
     }
+  };
 
-    monitor.frameId = requestAnimationFrame(tick);
-  })();
+  tick();
+  monitor.intervalId = setInterval(tick, LOCAL_VOLUME_POLL_MS);
 }
 
 // ============================================================
@@ -1156,6 +1169,8 @@ window.client.on("user-left", (user) => {
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
 
+  syncAfkTimerWithOccupancy({ leavingUid: user.uid });
+
 });
 
 /**
@@ -1164,6 +1179,7 @@ window.client.on("user-left", (user) => {
  * and plays a higher tone to signal arrival.
  */
 window.client.on("user-joined", async (user) => {
+  syncAfkTimerWithOccupancy({ remoteJoined: true });
   const { name, icon } = await resolveRemoteName(user.uid);
   // Idempotent recovery path: Firebase normally creates the card, but an
   // Agora reconnect must also restore it if an earlier event removed it.
@@ -3234,8 +3250,6 @@ class NotificationManager {
     this.customIconHref = window.APP_CONFIG?.notificationIcon || "icon-192.png";
     this.badgeIconHref = window.APP_CONFIG?.notificationBadge || "notification-badge.png";
     this.isTabVisible = !document.hidden;
-    this.lastNotificationTime = 0;
-    this.notificationCooldown = 3000;
     
     this.deviceId = this.getOrCreateDeviceId();
     this.hasEnsuredPushThisSession = false;
@@ -3258,6 +3272,21 @@ class NotificationManager {
 
   getCurrentSpace() {
     return window.CHANNEL || window.DEFAULT_SPACE || "Linkice";
+  }
+
+  async markCurrentSpaceVisited() {
+    if (!("serviceWorker" in navigator)) return;
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const worker = navigator.serviceWorker.controller || registration.active;
+      worker?.postMessage({
+        type: "SPACE_VISITED",
+        space: this.getCurrentSpace(),
+      });
+    } catch (err) {
+      console.warn("Could not clear the space notification:", err);
+    }
   }
   
   setupVisibilityListener() {
@@ -3365,6 +3394,7 @@ class NotificationManager {
         scope: registration.scope,
         userAgent: navigator.userAgent,
         standalone: window.matchMedia?.("(display-mode: standalone)")?.matches || navigator.standalone === true,
+        lastVisitedAt: Date.now(),
         updatedAt: Date.now(),
       };
   
@@ -3383,8 +3413,10 @@ class NotificationManager {
    */
   async triggerGlobalPush(username, text) {
     try {
-      const senderName = username || "Neko";
-      const notificationText = text ? `${senderName}: ${text}` : `${senderName}: Nova poruka`;
+      const space = this.getCurrentSpace();
+      const tag = `linkice-space-${space.toLowerCase()}`;
+      const notificationTitle = `Nove poruke u ${space}`;
+      const notificationText = `Ima novih poruka u prostoru ${space}.`;
       const response = await fetch(window.APP_CONFIG?.notifyProxyUrl || 'https://my-proxy-vercel-kappa.vercel.app/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3392,9 +3424,12 @@ class NotificationManager {
           senderUsername: username,
           senderUserId: firebase.auth().currentUser?.uid || null,
           senderDeviceId: this.deviceId,
-          space: this.getCurrentSpace(),
-          title: "Linkice",
+          space,
+          tag,
+          url: `?space=${encodeURIComponent(space)}`,
+          title: notificationTitle,
           message: notificationText,
+          data: { space, tag },
         })
       });
       if (!response.ok) {
@@ -3417,17 +3452,11 @@ class NotificationManager {
 
   incrementUnread(options = {}) {
     if (this.isTabVisible) return;
-    const { username, text, isSystem } = options;
+    const { isSystem } = options;
     if (isSystem) return;
     
     this.unreadCount++;
     this.updateNotifications();
-    
-    const now = Date.now();
-    if (username && text && (now - this.lastNotificationTime) > this.notificationCooldown) {
-      this.showBrowserNotification(username, text);
-      this.lastNotificationTime = now;
-    }
   }
   
   updateNotifications() {
@@ -3437,9 +3466,11 @@ class NotificationManager {
   }
   
   clearNotifications() {
-    if (this.unreadCount === 0) return;
-    this.unreadCount = 0;
-    this.updateNotifications();
+    if (this.unreadCount > 0) {
+      this.unreadCount = 0;
+      this.updateNotifications();
+    }
+    this.markCurrentSpaceVisited();
   }
   
   updateFavicon() {
@@ -3481,20 +3512,6 @@ class NotificationManager {
     else navigator.clearAppBadge().catch(() => {});
   }
   
-  showBrowserNotification(username, message) {
-    if (Notification.permission !== "granted" || this.isTabVisible) return;
-    const defaultSpace = window.DEFAULT_SPACE || "Linkice";
-    const currentSpace = this.getCurrentSpace();
-    const title = currentSpace === defaultSpace ? `${username} u ${defaultSpace}` : `${username} u ${currentSpace}`;
-    const notification = new Notification(title, {
-      body: message.substring(0, 80),
-      icon: this.customIconHref,
-      badge: this.badgeIconHref,
-      tag: `linkice-${currentSpace}`,
-    });
-    notification.onclick = () => { window.focus(); notification.close(); };
-    setTimeout(() => notification.close(), 4000);
-  }
 }
 
 window.notificationManager = new NotificationManager();
@@ -3540,6 +3557,7 @@ if ("serviceWorker" in navigator) {
 
       if (window.notificationManager) {
         await window.notificationManager.ensurePushSubscription(false);
+        await window.notificationManager.markCurrentSpaceVisited();
       }
     } catch (err) {
       console.error("❌ SW Registration failed:", err);
