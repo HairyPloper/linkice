@@ -203,21 +203,16 @@ h2 {
 
 /* ============================================================
    LIFELINE ANIMATION
-   SVG ECG-style line drawn across the header via clip-path
+   SVG ECG-style line inside the header via clip-path
    ============================================================ */
-.header::before {
-  content: "";
-  position: absolute;
-  top: 80%;
-  left: 32%;
-  width: 41%;
+.header-lifeline {
+  width: 130px;
   height: 20px;
-  transform: translateY(-50%);
+  margin: 4px auto -6px;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 24' preserveAspectRatio='none'%3E%3Cpolyline points='0,12 35,12 38,8 41,18 45,2 49,20 53,10 56,12 100,12' fill='none' stroke='%23f0abfc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
     no-repeat center;
   background-size: 100% 100%;
   opacity: 0.2;
-  z-index: 1;
   pointer-events: none;
   clip-path: inset(0 100% 0 0);
   animation: drawLifeLine 3.5s infinite ease-out 1s;
