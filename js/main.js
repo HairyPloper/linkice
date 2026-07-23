@@ -16,8 +16,8 @@ window.APP_CONFIG = {
   corsProxyUrl: "https://corsproxy.io/?",
   notificationIcon: "icon-192.png",
   notificationBadge: "notification-badge.png",
-  afkTimeoutMs: 10 * 60 * 1000,
-  afkWarningMs: 5 * 60 * 1000,
+  afkTimeoutMs: 30 * 60 * 1000,
+  afkWarningMs: 15 * 60 * 1000,
 };
 
 // ============================================================
