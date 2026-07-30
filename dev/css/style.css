@@ -172,59 +172,145 @@ body {
 
 /* ============================================================
    HEADER
-   Glassmorphism pill at the top with animated entrance
+   Responsive glass card at the top with animated entrance
    ============================================================ */
 .header {
-  margin-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 24px));
+  margin-top: calc(env(safe-area-inset-top, 0px) + 12px);
   flex-shrink: 0;
-  padding: 15px 30px;
-  min-width: 300px;
+  padding: 14px 24px 10px;
+  overflow: hidden;
   text-align: center;
-  background: var(--glass-bg);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--glass-border);
-  border-radius: 50px;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  background:
+    radial-gradient(circle at 50% -55%, rgba(192, 132, 252, 0.17), transparent 65%),
+    linear-gradient(135deg, rgba(30, 27, 75, 0.72), rgba(8, 12, 31, 0.78));
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  border: 1px solid rgba(196, 181, 253, 0.14);
+  border-radius: 24px;
+  box-shadow:
+    0 14px 40px rgba(2, 6, 23, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   z-index: 10;
   animation: slideDown 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* Soft top highlight keeps the glass edge visible over dark backgrounds. */
+.header::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -1px;
+  left: 18%;
+  width: 64%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(240, 171, 252, 0.55), transparent);
+}
+
 /* Gradient title text */
-h2 {
+.header-title {
   margin: 0;
-  font-weight: lighter;
-  background: linear-gradient(135deg, #a5b4fc, #f0abfc);
+  padding-left: 0.34em;
+  font-family: "Outfit", "Segoe UI", sans-serif;
+  font-size: clamp(1.15rem, 5vw, 1.45rem);
+  font-weight: 300;
+  line-height: 1.2;
+  letter-spacing: 0.34em;
+  background: linear-gradient(115deg, #c7d2fe 12%, #f5d0fe 52%, #c4b5fd 88%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  filter: drop-shadow(0 0 12px rgba(192, 132, 252, 0.22));
+}
+
+.header-status {
+  margin-top: 4px;
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 0.78rem;
+  font-weight: 300;
+  line-height: 1.2;
+  letter-spacing: 0.025em;
 }
 
 /* ============================================================
    LIFELINE ANIMATION
-   SVG ECG-style line inside the header via clip-path
+   SVG ECG-style line with a draw-and-fade loop
    ============================================================ */
 .header-lifeline {
-  width: 130px;
-  height: 20px;
-  margin: 4px auto -6px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 24' preserveAspectRatio='none'%3E%3Cpolyline points='0,12 35,12 38,8 41,18 45,2 49,20 53,10 56,12 100,12' fill='none' stroke='%23f0abfc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-    no-repeat center;
-  background-size: 100% 100%;
-  opacity: 0.2;
+  display: block;
+  width: 140px;
+  height: 24px;
+  margin: 3px auto -5px;
+  overflow: visible;
   pointer-events: none;
-  clip-path: inset(0 100% 0 0);
-  animation: drawLifeLine 3.5s infinite ease-out 1s;
 }
 
-/* Reveals the lifeline SVG from left to right */
-@keyframes drawLifeLine {
-  0% {
-    clip-path: inset(0 100% 0 0);
+.header-lifeline-path {
+  fill: none;
+  stroke: url("#lifeline-gradient");
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: lifelineCycle 4.2s cubic-bezier(0.45, 0, 0.25, 1) 0.8s infinite;
+}
+
+.header-lifeline-glow {
+  stroke-width: 4;
+  stroke-opacity: 0.38;
+  filter: blur(2.5px);
+}
+
+/* Draw, briefly breathe, fade fully, then reset while invisible. */
+@keyframes lifelineCycle {
+  0%,
+  7% {
+    opacity: 0;
+    stroke-dashoffset: 1;
   }
+  13% {
+    opacity: 0.85;
+    stroke-dashoffset: 1;
+  }
+  58%,
+  68% {
+    opacity: 0.85;
+    stroke-dashoffset: 0;
+  }
+  84%,
   100% {
-    clip-path: inset(0 11% 0 0);
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .header {
+    width: calc(100vw - 20px);
+    padding-inline: 18px;
+    border-radius: 20px;
+  }
+
+  .header-title {
+    font-size: 1.18rem;
+    letter-spacing: 0.29em;
+    padding-left: 0.29em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header {
+    animation: none;
+  }
+
+  .header-lifeline-path {
+    animation: none;
+    opacity: 0.55;
+    stroke-dashoffset: 0;
   }
 }
 
