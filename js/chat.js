@@ -157,7 +157,7 @@ window.appendMessage = (
   if (data && data.type === "poll") {
     renderPoll(msgDiv, snapshotKey, data, color, timeString);
   } else {
-    renderStandardMessage(msgDiv, name, text, color, timeString);
+    renderStandardMessage(msgDiv, name, text, color, timeString, data);
   }
 
   const previousMessage = [
@@ -187,13 +187,15 @@ window.appendMessage = (
   setTimeout(() => {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }, 200);
+
+  return msgDiv;
 };
 
 // ============================================================
 // STANDARD MESSAGE RENDERER
 // Handles bot messages differently — splits question/answer visually
 // ============================================================
-function renderStandardMessage(msgDiv, name, text, color, timeString) {
+function renderStandardMessage(msgDiv, name, text, color, timeString, data) {
   msgDiv.innerHTML = "";
   if (timeString) msgDiv.insertAdjacentHTML("beforeend", timeString);
 
@@ -222,10 +224,10 @@ function renderStandardMessage(msgDiv, name, text, color, timeString) {
     }
   }
 
-  renderTextWithMedia(contentEl, text);
+  renderTextWithMedia(contentEl, text, data);
 }
 
-function renderTextWithMedia(container, text) {
+function renderTextWithMedia(container, text, data = null) {
   const value = String(text || "");
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   let lastIndex = 0;
@@ -236,7 +238,9 @@ function renderTextWithMedia(container, text) {
     if (match.index > lastIndex) {
       container.appendChild(document.createTextNode(value.slice(lastIndex, match.index)));
     }
-    container.appendChild(createMediaElement(url));
+    const mediaElement = createMediaElement(url, data);
+    container.appendChild(mediaElement);
+    scheduleFileExpiry(mediaElement, url, data);
     lastIndex = match.index + url.length;
   }
 
@@ -245,14 +249,123 @@ function renderTextWithMedia(container, text) {
   }
 }
 
-function createMediaElement(url) {
-  const isImage   = /\.(jpeg|jpg|gif|png|webp)$/i.test(url);
-  const isVideo   = /\.(mp4|webm|ogg)$/i.test(url);
-  const isAudio   = /\.(mp3|wav)$/i.test(url);
-  const isDoc     = /\.(zip|rar|7z|pdf|doc|docx|txt)$/i.test(url);
+function getUrlFileName(url) {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split("/").pop() || "fajl");
+  } catch (_) {
+    return url.split("/").pop().split("?")[0] || "fajl";
+  }
+}
+
+function getFileExtension(fileName) {
+  const match = String(fileName || "").match(/\.([a-z0-9]{1,8})$/i);
+  return match ? match[1].toUpperCase() : "FAJL";
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size < 0) return "";
+  if (size < 1024) return `${size} B`;
+
+  const units = ["KB", "MB", "GB"];
+  let value = size / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  const decimals = value >= 10 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${units[unitIndex]}`;
+}
+
+const FILE_EXPIRY_MS = {
+  "1h": 60 * 60 * 1000,
+  "24h": 24 * 60 * 60 * 1000,
+  "72h": 72 * 60 * 60 * 1000,
+};
+
+function getFileExpiry(messageData) {
+  if (!messageData) return null;
+
+  const explicitExpiry = Number(messageData.fileExpiresAt);
+  if (Number.isFinite(explicitExpiry) && explicitExpiry > 0) return explicitExpiry;
+
+  // Messages created just before fileExpiresAt was introduced can still use
+  // their timestamp and the old "Dostupno 24h" text as a reliable fallback.
+  const legacyMatch = String(messageData.text || "").match(/^Dostupno\s+(1h|24h|72h):/i);
+  const expiryKey = messageData.fileExpiry || legacyMatch?.[1]?.toLowerCase();
+  const duration = FILE_EXPIRY_MS[expiryKey];
+  const createdAt = Number(messageData.timestamp);
+  return duration && Number.isFinite(createdAt) ? createdAt + duration : null;
+}
+
+function isFileUploadMessage(messageData, url) {
+  if (!messageData) return false;
+  const hasUploadPrefix = /^Dostupno\s+(?:trajno|1h|24h|72h):\s*https?:\/\//i
+    .test(String(messageData.text || ""));
+  return (messageData.type === "file" || hasUploadPrefix) &&
+    (!messageData.fileUrl || messageData.fileUrl === url);
+}
+
+function createExpiredFileElement(fileName, fileSize) {
+  const ext = getFileExtension(fileName);
+  const card = document.createElement("div");
+  card.className = "media-card media-card--doc media-card--expired";
+  card.setAttribute("aria-label", `${fileName}, fajl je istekao`);
+
+  const icon = document.createElement("span");
+  icon.className = "media-doc-icon";
+  icon.textContent = ext.slice(0, 4);
+  icon.setAttribute("aria-hidden", "true");
+
+  const info = document.createElement("div");
+  info.className = "media-doc-info";
+  const name = document.createElement("span");
+  name.className = "media-doc-name";
+  name.textContent = fileName;
+  name.title = fileName;
+  const details = document.createElement("span");
+  details.className = "media-doc-ext";
+  details.textContent = [ext, formatFileSize(fileSize)].filter(Boolean).join(" / ");
+  info.append(name, details);
+
+  const expired = document.createElement("span");
+  expired.className = "media-doc-expired";
+  expired.textContent = "Istekao";
+  card.append(icon, info, expired);
+  return card;
+}
+
+function scheduleFileExpiry(element, url, messageData) {
+  const expiresAt = getFileExpiry(messageData);
+  if (!expiresAt || expiresAt <= Date.now()) return;
+
+  setTimeout(() => {
+    if (element.isConnected) {
+      element.replaceWith(createMediaElement(url, messageData));
+    }
+  }, expiresAt - Date.now() + 100);
+}
+
+function createMediaElement(url, messageData = null) {
+  const isUploadedFile = isFileUploadMessage(messageData, url);
+  const fileName = isUploadedFile && messageData.fileName
+    ? String(messageData.fileName)
+    : getUrlFileName(url);
+  const expiresAt = isUploadedFile ? getFileExpiry(messageData) : null;
+  if (expiresAt && expiresAt <= Date.now()) {
+    return createExpiredFileElement(fileName, messageData.fileSize);
+  }
+
+  const mimeType = isUploadedFile ? String(messageData.fileMimeType || "") : "";
+  const hostedFileName = getUrlFileName(url);
+  const matchesExtension = (pattern) => pattern.test(fileName) || pattern.test(hostedFileName);
+  const isImage   = mimeType.startsWith("image/") || matchesExtension(/\.(jpeg|jpg|gif|png|webp)$/i);
+  const isVideo   = mimeType.startsWith("video/") || matchesExtension(/\.(mp4|webm|ogg)$/i);
+  const isAudio   = mimeType.startsWith("audio/") || matchesExtension(/\.(mp3|wav)$/i);
+  const isDoc     = isUploadedFile || matchesExtension(/\.(zip|rar|7z|pdf|doc|docx|txt)$/i);
   const ytMatch   = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
   const spotifyMatch = url.match(/open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/);
-  const fileName = url.split("/").pop().split("?")[0];
 
   if (isImage) {
     const card = document.createElement("div");
@@ -265,7 +378,7 @@ function createMediaElement(url) {
       img.requestFullscreen?.() || window.open(url, "_blank", "noopener");
     });
 
-    const link = createMediaLink(url, `ðŸ–¼ ${fileName}`, "media-link");
+    const link = createMediaLink(url, fileName, "media-link");
     card.append(img, link);
     return card;
   }
@@ -281,7 +394,7 @@ function createMediaElement(url) {
     source.src = url;
     video.appendChild(source);
 
-    const link = createMediaLink(url, `ðŸŽ¬ ${fileName}`, "media-link");
+    const link = createMediaLink(url, fileName, "media-link");
     card.append(video, link);
     return card;
   }
@@ -292,7 +405,7 @@ function createMediaElement(url) {
 
     const icon = document.createElement("span");
     icon.className = "media-audio-icon";
-    icon.textContent = "ðŸŽµ";
+    icon.textContent = "♫";
 
     const info = document.createElement("div");
     info.className = "media-audio-info";
@@ -312,29 +425,31 @@ function createMediaElement(url) {
   }
 
   if (isDoc) {
-    const ext = fileName.split(".").pop().toUpperCase();
-    const icons = {
-      ZIP: "ðŸ—œ", RAR: "ðŸ—œ", "7Z": "ðŸ—œ",
-      PDF: "ðŸ“„", DOC: "ðŸ“", DOCX: "ðŸ“", TXT: "ðŸ“ƒ",
-    };
+    const ext = getFileExtension(fileName);
 
     const card = document.createElement("div");
     card.className = "media-card media-card--doc";
     const icon = document.createElement("span");
     icon.className = "media-doc-icon";
-    icon.textContent = icons[ext] || "ðŸ“";
+    icon.textContent = ext.slice(0, 4);
+    icon.setAttribute("aria-hidden", "true");
 
     const info = document.createElement("div");
     info.className = "media-doc-info";
     const name = document.createElement("span");
     name.className = "media-doc-name";
     name.textContent = fileName;
+    name.title = fileName;
     const extEl = document.createElement("span");
     extEl.className = "media-doc-ext";
-    extEl.textContent = ext;
+    const fileSize = isUploadedFile ? formatFileSize(messageData.fileSize) : "";
+    extEl.textContent = [ext, fileSize].filter(Boolean).join(" / ");
     info.append(name, extEl);
 
     const download = createMediaLink(url, "Preuzmi", "media-doc-btn");
+    download.setAttribute("aria-label", `Preuzmi ${fileName}`);
+    download.download = fileName;
+    download.title = `Preuzmi ${fileName}`;
     card.append(icon, info, download);
     return card;
   }
@@ -381,7 +496,7 @@ function createMediaElement(url) {
     return card;
   }
 
-  return createMediaLink(url, `ðŸ”— ${url}`, "media-link-plain");
+  return createMediaLink(url, url, "media-link-plain");
 }
 
 function createMediaLink(url, label, className) {
@@ -1009,18 +1124,30 @@ async function uploadFile(file, expiry) {
 
 /** Uploads a file and posts the resulting URL as a chat message */
 window.handleFileUpload = async (file) => {
-  if (window.appendMessage)
-    window.appendMessage("Sistem", `Slanje fajla: ${file.name}...`, "#fbbf24");
+  const uploadStatus = window.appendMessage
+    ? window.appendMessage("Sistem", `Slanje fajla: ${file.name}...`, "#fbbf24")
+    : null;
 
   const expirySelect = document.getElementById("upload-expiry");
   const expiry  = expirySelect ? expirySelect.value : "trajno";
+  const uploadStartedAt = Date.now();
   const fileUrl = await uploadFile(file, expiry);
+  uploadStatus?.remove();
 
   if (fileUrl && fileUrl.startsWith("http")) {
+    const expiryDuration = FILE_EXPIRY_MS[expiry];
+    const fileExpiresAt = expiryDuration ? uploadStartedAt + expiryDuration : null;
     // Post the URL to chat — the media formatter will embed it appropriately
     window.chatRef.push({
       username:  window.myDisplayName,
       ...getChatSenderMetadata(),
+      type:      "file",
+      fileName:  file.name,
+      fileSize:  file.size,
+      fileMimeType: file.type || "",
+      fileUrl,
+      fileExpiry: expiry,
+      ...(fileExpiresAt ? { fileExpiresAt } : {}),
       text:      `Dostupno ${expiry}: ${fileUrl}`,
       timestamp: Date.now(),
     });
