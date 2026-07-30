@@ -663,6 +663,13 @@ h2 {
   transition: background 0.2s ease;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* Rich media is a flex child; allow it to shrink inside narrow bubbles. */
+.chat-msg > span {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chat-msg:hover {
@@ -948,6 +955,7 @@ h2 {
   border-radius: 14px;
   overflow: hidden;
   max-width: 100%;
+  box-sizing: border-box;
   transition: border-color 0.2s;
 }
 .media-card:hover {
@@ -1030,6 +1038,8 @@ h2 {
   gap: 13px;
   padding: 13px;
   min-width: min(330px, 100%);
+  max-width: 100%;
+  box-sizing: border-box;
   background:
     linear-gradient(135deg, rgba(99, 102, 241, 0.09), rgba(139, 92, 246, 0.04)),
     rgba(255, 255, 255, 0.035);
