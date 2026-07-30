@@ -58,20 +58,37 @@
          HEADER
          App title and live connection status message
          ============================================================ -->
-    <div class="header">
-      <h2>L I N K I C E</h2>
-      <div
-        id="status"
-        style="
-          margin-top: 5px;
-          font-size: 0.8rem;
-          color: #cbd5e1;
-          font-weight: 300;
-        "
-      ></div>
-      <!-- Animated ECG line stays inside the header without overlapping status -->
-      <div class="header-lifeline" aria-hidden="true"></div>
-    </div>
+    <header class="header">
+      <h1 class="header-title">LINKICE</h1>
+      <div id="status" class="header-status" aria-live="polite"></div>
+      <!-- Draws once, fades away completely, then resets for the next pulse. -->
+      <svg
+        class="header-lifeline"
+        viewBox="0 0 140 24"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient id="lifeline-gradient" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#a5b4fc" stop-opacity="0" />
+            <stop offset="0.14" stop-color="#a5b4fc" />
+            <stop offset="0.5" stop-color="#f0abfc" />
+            <stop offset="0.86" stop-color="#c4b5fd" />
+            <stop offset="1" stop-color="#c4b5fd" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <polyline
+          class="header-lifeline-path header-lifeline-glow"
+          pathLength="1"
+          points="0,12 45,12 50,8 55,18 62,2 69,20 76,9 81,12 140,12"
+        />
+        <polyline
+          class="header-lifeline-path"
+          pathLength="1"
+          points="0,12 45,12 50,8 55,18 62,2 69,20 76,9 81,12 140,12"
+        />
+      </svg>
+    </header>
 
     <!-- ============================================================
          USER GRID
@@ -360,6 +377,6 @@
          APPLICATION SCRIPTS
          Load order matters: main → utils → ui → rtc → chat -> whiteboard → notifications
          ============================================================ -->
-    <script src="js/bundle.min.js?v=3f1ae1a21e2cae977076838fbee35ee5e2403ebb"></script>
+    <script src="js/bundle.min.js?v=7338035221c9f9bdfa0f585398088ff03603922d"></script>
   </body>
 </html>
