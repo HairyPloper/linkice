@@ -34,7 +34,8 @@ const SCREEN_SHARE_AUDIO_GAIN = 0.18;
 // Keep the UI volume stable when Agora republishes/replaces a remote track.
 const remoteVolumes = new Map();
 
-const LOCAL_SPEAKING_THRESHOLD = 14;
+const LOCAL_TRACK_SPEAKING_THRESHOLD = 0.08;
+const LOCAL_VOLUME_POLL_MS = 250;
 const REMOTE_SPEAKING_THRESHOLD = 8;
 let localVolumeMonitor = null;
 
@@ -65,11 +66,8 @@ let afkWarningTimer = null;
 let afkDisconnectTimer = null;
 let lastAfkActivityAt = Date.now();
 
-function isSoloVoiceUser(excludingUid = null) {
-  const remoteUsers = window.client?.remoteUsers || [];
-  return !remoteUsers.some((user) =>
-    user.uid !== window.client?.uid && user.uid !== excludingUid
-  );
+function isSoloInVoiceChannel() {
+  return (window.client?.remoteUsers?.length || 0) === 0;
 }
 
 function clearAfkTimers() {
@@ -81,7 +79,7 @@ function clearAfkTimers() {
 
 function scheduleAfkTimers() {
   clearAfkTimers();
-  if (!window.isVoiceJoined || !isSoloVoiceUser()) return;
+  if (!window.isVoiceJoined || !isSoloInVoiceChannel()) return;
 
   const elapsed = Date.now() - lastAfkActivityAt;
   const warningDelay = Math.max(0, AFK_TIMEOUT_MS - AFK_WARNING_MS - elapsed);
@@ -89,7 +87,7 @@ function scheduleAfkTimers() {
 
   if (AFK_WARNING_MS > 0) {
     afkWarningTimer = setTimeout(() => {
-      if (!window.isVoiceJoined || !isSoloVoiceUser()) return;
+      if (!window.isVoiceJoined || !isSoloInVoiceChannel()) return;
       const warningMinutes = Math.ceil(AFK_WARNING_MS / 60000);
       if (window.appendMessage) {
         window.appendMessage(
@@ -102,7 +100,7 @@ function scheduleAfkTimers() {
   }
 
   afkDisconnectTimer = setTimeout(async () => {
-    if (!window.isVoiceJoined || !isSoloVoiceUser()) return;
+    if (!window.isVoiceJoined || !isSoloInVoiceChannel()) return;
     const elapsedNow = Date.now() - lastAfkActivityAt;
     if (elapsedNow < AFK_TIMEOUT_MS) {
       scheduleAfkTimers();
@@ -117,7 +115,7 @@ function scheduleAfkTimers() {
 }
 
 function markAfkActivity() {
-  if (!window.isVoiceJoined || !isSoloVoiceUser()) return;
+  if (!window.isVoiceJoined || !isSoloInVoiceChannel()) return;
   const now = Date.now();
   if (now - lastAfkActivityAt < AFK_ACTIVITY_THROTTLE_MS) return;
   lastAfkActivityAt = now;
@@ -129,10 +127,26 @@ function startAfkTimer() {
   scheduleAfkTimers();
 }
 
+function syncAfkTimerWithOccupancy({ remoteJoined = false, leavingUid = null } = {}) {
+  const remainingRemoteUsers = (window.client?.remoteUsers || []).filter(
+    (user) => String(user.uid) !== String(leavingUid),
+  );
+
+  // Event ordering differs between Agora SDK releases, so use the event itself
+  // instead of assuming remoteUsers has already been updated.
+  if (!window.isVoiceJoined || remoteJoined || remainingRemoteUsers.length > 0) {
+    clearAfkTimers();
+    return;
+  }
+
+  // Becoming solo starts a fresh inactivity period.
+  startAfkTimer();
+}
+
 // Read-only AFK diagnostics for testing from the browser console.
 window.getAfkStatus = () => {
   const voiceJoined = window.isVoiceJoined === true;
-  const solo = voiceJoined && isSoloVoiceUser();
+  const solo = voiceJoined && isSoloInVoiceChannel();
   const elapsedMs = Math.max(0, Date.now() - lastAfkActivityAt);
 
   return {
@@ -194,50 +208,41 @@ async function resolveRemoteName(uid) {
 function stopLocalVolumeMonitor() {
   if (!localVolumeMonitor) return;
   localVolumeMonitor.active = false;
-  if (localVolumeMonitor.frameId) {
-    cancelAnimationFrame(localVolumeMonitor.frameId);
+  if (localVolumeMonitor.intervalId) {
+    clearInterval(localVolumeMonitor.intervalId);
   }
   if (localVolumeMonitor.silenceTimer) {
     clearTimeout(localVolumeMonitor.silenceTimer);
   }
-  localVolumeMonitor.ctx.close?.().catch(() => {});
   document.getElementById(`avatar-${window.client.uid}`)?.classList.remove("speaking");
   localVolumeMonitor = null;
 }
 
 function startLocalVolumeMonitor(localAudioTrack) {
   stopLocalVolumeMonitor();
-  const stream = new MediaStream([localAudioTrack.getMediaStreamTrack()]);
-  const ctx = new AudioContext();
-  const source = ctx.createMediaStreamSource(stream);
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.3;
-  source.connect(analyser);
-
-  const data = new Uint8Array(analyser.frequencyBinCount);
   let silenceTimer = null;
   const DEACTIVATE_DELAY = 600;
   const monitor = {
     active: true,
-    ctx,
-    frameId: null,
+    intervalId: null,
     silenceTimer: null,
   };
   localVolumeMonitor = monitor;
 
-  (function tick() {
+  const tick = () => {
     if (!monitor.active) return;
-    analyser.getByteFrequencyData(data);
-    const avg = data.reduce((a, b) => a + b, 0) / data.length;
-    if (avg > LOCAL_SPEAKING_THRESHOLD) markAfkActivity();
-    const avatar = document.getElementById(`avatar-${window.client.uid}`);
-    if (!avatar) {
-      monitor.frameId = requestAnimationFrame(tick);
-      return;
-    }
+    // Use Agora's track meter instead of a separate AudioContext. Browsers can
+    // suspend Web Audio contexts in quiet/background tabs even while the
+    // microphone track is still being published, which made real speech look
+    // like AFK silence after the warning had appeared.
+    const level = Number(localAudioTrack.getVolumeLevel?.()) || 0;
+    const isSpeaking = !isMuted && level > LOCAL_TRACK_SPEAKING_THRESHOLD;
+    if (isSpeaking) markAfkActivity();
 
-    if (avg > LOCAL_SPEAKING_THRESHOLD) {
+    const avatar = document.getElementById(`avatar-${window.client.uid}`);
+    if (!avatar) return;
+
+    if (isSpeaking) {
       avatar.classList.add("speaking");
       if (silenceTimer) {
         clearTimeout(silenceTimer);
@@ -255,9 +260,10 @@ function startLocalVolumeMonitor(localAudioTrack) {
         monitor.silenceTimer = silenceTimer;
       }
     }
+  };
 
-    monitor.frameId = requestAnimationFrame(tick);
-  })();
+  tick();
+  monitor.intervalId = setInterval(tick, LOCAL_VOLUME_POLL_MS);
 }
 
 // ============================================================
@@ -433,11 +439,11 @@ window.client.on("user-left", (user) => {
   const displayName = window.getDisplayName(user.uid);
   delete window.uidNameMap[user.uid];
   remoteVolumes.delete(String(user.uid));
-  // Start fresh only when this departure leaves the local user alone.
-  if (window.isVoiceJoined && isSoloVoiceUser(user.uid)) startAfkTimer();
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
+
+  syncAfkTimerWithOccupancy({ leavingUid: user.uid });
 
 });
 
@@ -447,8 +453,7 @@ window.client.on("user-left", (user) => {
  * and plays a higher tone to signal arrival.
  */
 window.client.on("user-joined", async (user) => {
-  // The AFK countdown applies only while no other voice user is present.
-  clearAfkTimers();
+  syncAfkTimerWithOccupancy({ remoteJoined: true });
   const { name, icon } = await resolveRemoteName(user.uid);
   // Idempotent recovery path: Firebase normally creates the card, but an
   // Agora reconnect must also restore it if an earlier event removed it.

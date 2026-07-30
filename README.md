@@ -143,7 +143,7 @@ voice_room_web/
 
 AEC (echo cancellation), AGC (gain control), and ANS (noise suppression) can be toggled per-session from the settings menu. Choices are saved to `localStorage`. Speaker output device can also be selected after joining (desktop only).
 
-The AFK countdown runs only while a voice user is alone. User interaction or microphone speech restarts it; another voice user joining stops it, and the countdown starts fresh when the last other voice user leaves. After 15 inactive solo minutes the chat shows a warning; after 30 minutes the normal leave flow disconnects Agora but keeps chat and its identity reservation active. Adjust `APP_CONFIG.afkTimeoutMs` and `APP_CONFIG.afkWarningMs` in `js/main.js` to change these intervals.
+Solo voice users are considered active when they interact with the page or speak into the microphone. Another voice user joining stops the AFK countdown, and the timer starts fresh when the last other voice user leaves. After 15 inactive minutes the chat shows a warning; after 30 minutes the normal leave flow disconnects Agora but keeps chat and its identity reservation active. Adjust `APP_CONFIG.afkTimeoutMs` and `APP_CONFIG.afkWarningMs` in `js/main.js` to change these intervals.
 
 For live timer diagnostics, run `window.getAfkStatus()` in the browser console. To watch it update every second, run `window.afkWatch = setInterval(() => console.table(window.getAfkStatus()), 1000)`. Stop watching with `clearInterval(window.afkWatch)`.
 
