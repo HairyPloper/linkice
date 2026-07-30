@@ -11,7 +11,7 @@ A real-time voice chat room built with **Agora WebRTC**, **Firebase**, and vanil
 - 💬 **Persistent chat** — messages stored in Firebase. Supports images, video, audio, YouTube, Spotify, and file embeds automatically from URLs
 - 🏠 **Multiple spaces** — each `?space=` URL parameter creates a fully isolated space with its own voice channel, chat history, whiteboard, and presence. Share a link like `yoursite.com?space=gaming` to invite someone into a specific space
 - 🎭 **Session identities** — every tab/device has a unique Firebase/Agora session; generated funny names are random and collision-free, while custom names may be shared
-- 💤 **Solo AFK disconnect** — users who are alone in voice receive a warning after 15 inactive minutes and automatically leave Agora after 30 minutes while remaining connected to chat
+- 💤 **Solo AFK disconnect** — an inactive user who is alone in voice receives a warning after 15 minutes and automatically leaves Agora after 30 minutes while remaining connected to chat
 - 🖥️ **Screen sharing** — 1080p/30fps with optional system audio capture
 - 🎨 **Shared whiteboard** — real-time collaborative canvas with drawing tools and eraser, synced via Firebase
 - 🎮 **Word guessing game** — drawer picks a word, others guess via chat. 60-second timer, confetti on correct guess
@@ -143,7 +143,9 @@ voice_room_web/
 
 AEC (echo cancellation), AGC (gain control), and ANS (noise suppression) can be toggled per-session from the settings menu. Choices are saved to `localStorage`. Speaker output device can also be selected after joining (desktop only).
 
-Solo voice users are considered active when they interact with the page or speak into the microphone. When another Agora user is connected, the AFK warning and disconnect are disabled. After the last other user leaves, a fresh solo timer starts: the chat warns after 15 inactive minutes, and after 30 minutes the normal leave flow disconnects Agora but keeps chat and its identity reservation active. Adjust `APP_CONFIG.afkTimeoutMs` and `APP_CONFIG.afkWarningMs` in `js/main.js` to change these intervals.
+Solo voice users are considered active when they interact with the page or speak into the microphone. Another voice user joining stops the AFK countdown, and the timer starts fresh when the last other voice user leaves. After 15 inactive minutes the chat shows a warning; after 30 minutes the normal leave flow disconnects Agora but keeps chat and its identity reservation active. Adjust `APP_CONFIG.afkTimeoutMs` and `APP_CONFIG.afkWarningMs` in `js/main.js` to change these intervals.
+
+For live timer diagnostics, run `window.getAfkStatus()` in the browser console. To watch it update every second, run `window.afkWatch = setInterval(() => console.table(window.getAfkStatus()), 1000)`. Stop watching with `clearInterval(window.afkWatch)`.
 
 ---
 

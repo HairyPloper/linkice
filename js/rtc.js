@@ -41,7 +41,7 @@ let localVolumeMonitor = null;
 
 // ============================================================
 // AFK AUTO-DISCONNECT
-// Stops passive voice connections from consuming Agora minutes indefinitely.
+// Stops a voice connection from consuming Agora minutes while its user is alone.
 // User interaction and local microphone speech both count as activity.
 // ============================================================
 const configuredAfkTimeout = Number(window.APP_CONFIG?.afkTimeoutMs);
@@ -94,7 +94,7 @@ function scheduleAfkTimers() {
           "Sistem",
           AFK_MESSAGES.warning(warningMinutes),
           "#fbbf24",
-        )
+        );
       }
     }, warningDelay);
   }
@@ -115,7 +115,7 @@ function scheduleAfkTimers() {
 }
 
 function markAfkActivity() {
-  if (!window.isVoiceJoined) return;
+  if (!window.isVoiceJoined || !isSoloInVoiceChannel()) return;
   const now = Date.now();
   if (now - lastAfkActivityAt < AFK_ACTIVITY_THROTTLE_MS) return;
   lastAfkActivityAt = now;
@@ -142,6 +142,25 @@ function syncAfkTimerWithOccupancy({ remoteJoined = false, leavingUid = null } =
   // Becoming solo starts a fresh inactivity period.
   startAfkTimer();
 }
+
+// Read-only AFK diagnostics for testing from the browser console.
+window.getAfkStatus = () => {
+  const voiceJoined = window.isVoiceJoined === true;
+  const solo = voiceJoined && isSoloInVoiceChannel();
+  const elapsedMs = Math.max(0, Date.now() - lastAfkActivityAt);
+
+  return {
+    voiceJoined,
+    solo,
+    elapsedSeconds: Math.floor(elapsedMs / 1000),
+    warningInSeconds: solo
+      ? Math.max(0, Math.ceil((AFK_TIMEOUT_MS - AFK_WARNING_MS - elapsedMs) / 1000))
+      : null,
+    disconnectInSeconds: solo
+      ? Math.max(0, Math.ceil((AFK_TIMEOUT_MS - elapsedMs) / 1000))
+      : null,
+  };
+};
 
 ["pointerdown", "keydown", "touchstart"].forEach((eventName) => {
   document.addEventListener(eventName, markAfkActivity, { passive: true });
