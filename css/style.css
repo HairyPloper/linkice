@@ -185,15 +185,15 @@ body {
   overflow: hidden;
   text-align: center;
   background:
-    radial-gradient(circle at 50% -55%, rgba(192, 132, 252, 0.17), transparent 65%),
-    linear-gradient(135deg, rgba(30, 27, 75, 0.72), rgba(8, 12, 31, 0.78));
-  backdrop-filter: blur(18px) saturate(135%);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
-  border: 1px solid rgba(196, 181, 253, 0.14);
+    radial-gradient(circle at 50% -55%, rgba(192, 132, 252, 0.1), transparent 65%),
+    rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(14px) saturate(125%);
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
+  border: 1px solid var(--glass-border);
   border-radius: 24px;
   box-shadow:
-    0 14px 40px rgba(2, 6, 23, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 14px 40px rgba(2, 6, 23, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
   z-index: 10;
   animation: slideDown 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -237,7 +237,7 @@ body {
 
 /* ============================================================
    LIFELINE ANIMATION
-   SVG ECG-style line with a draw-and-fade loop
+   SVG ECG-style line that enters and exits along its own path
    ============================================================ */
 .header-lifeline {
   display: block;
@@ -256,7 +256,8 @@ body {
   stroke-linejoin: round;
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: lifelineCycle 4.2s cubic-bezier(0.45, 0, 0.25, 1) 0.8s infinite;
+  animation: lifelineCycle 4.2s linear 0.8s infinite;
+  will-change: stroke-dashoffset;
 }
 
 .header-lifeline-glow {
@@ -265,26 +266,23 @@ body {
   filter: blur(2.5px);
 }
 
-/* Draw, briefly breathe, fade fully, then reset while invisible. */
+/*
+ * The leading edge draws left-to-right. After a short hold, the trailing
+ * edge follows the same ECG path out to the right, so the spike is never
+ * erased by a straight vertical wipe. Both end states are invisible, which
+ * lets the animation reset without a flash.
+ */
 @keyframes lifelineCycle {
   0%,
-  7% {
-    opacity: 0;
+  8% {
     stroke-dashoffset: 1;
   }
-  13% {
-    opacity: 0.85;
-    stroke-dashoffset: 1;
-  }
-  58%,
-  68% {
-    opacity: 0.85;
+  50%,
+  58% {
     stroke-dashoffset: 0;
   }
-  84%,
   100% {
-    opacity: 0;
-    stroke-dashoffset: 0;
+    stroke-dashoffset: -1;
   }
 }
 
