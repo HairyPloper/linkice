@@ -8,7 +8,9 @@
 // AGORA APP ID
 // Public identifier for the Agora project (no secret required client-side)
 // ============================================================
-window.APP_ID = "beb2d2e844954540847d8bf07648926e";
+//old one first new one second free
+//window.APP_ID = "beb2d2e844954540847d8bf07648926e";
+window.APP_ID = "a0fb9ac8d3f942488845aa6d4e931615";
 
 window.APP_CONFIG = {
   aiProxyUrl: "https://my-proxy-vercel-kappa.vercel.app/api/gemini",
