@@ -173,7 +173,7 @@ window.addEventListener("focus", markAfkActivity);
 
 // ============================================================
 // SHARED HELPER — resolveRemoteName
-// Returns a Promise<{name, icon}> for a remote Agora UID.
+// Returns a Promise<{name, icon} | null> for a remote Agora UID.
 // Always does a fresh Firebase read so it's not affected by
 // the race between user-joined and user-published.
 // Result is also cached in uidNameMap for getDisplayName().
@@ -189,7 +189,7 @@ async function resolveRemoteName(uid) {
 
     const data = snap.val();
 
-    if (data?.displayName) {
+    if (data?.displayName && data.voiceJoined === true) {
       window.uidNameMap[uid] = data.displayName;
       const icon = data.icon || window.animals[Math.floor(Math.random() * window.animals.length)];
       return { name: data.displayName, icon };
@@ -200,9 +200,11 @@ async function resolveRemoteName(uid) {
     }
   }
 
-  const fallback = String(uid);
-  window.uidNameMap[uid] = fallback;
-  return { name: fallback, icon: window.animals[Math.floor(Math.random() * window.animals.length)] };
+  // A refreshed page can briefly see its previous Agora connection after
+  // Firebase has already removed that session. Do not turn that stale UID into
+  // a synthetic participant card; a valid presence event will render real users.
+  delete window.uidNameMap[uid];
+  return null;
 }
 
 function stopLocalVolumeMonitor() {
@@ -453,8 +455,11 @@ window.client.on("user-left", (user) => {
  * and plays a higher tone to signal arrival.
  */
 window.client.on("user-joined", async (user) => {
+  const identity = await resolveRemoteName(user.uid);
+  if (!identity) return;
+
   syncAfkTimerWithOccupancy({ remoteJoined: true });
-  const { name, icon } = await resolveRemoteName(user.uid);
+  const { name, icon } = identity;
   // Idempotent recovery path: Firebase normally creates the card, but an
   // Agora reconnect must also restore it if an earlier event removed it.
   window.drawUser(user.uid, name, icon, false);
