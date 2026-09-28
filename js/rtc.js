@@ -21,22 +21,45 @@ let localTracks = { audioTrack: null };
 // Tracks whether the local mic is currently muted
 let isMuted = false;
 
-// Screen share tracks (video + optional system audio)
-let screenTrack      = null;
-let screenAudioTrack = null;
-let screenAudioCaptureTrack = null;
-let screenAudioContext = null;
+// A second publisher keeps screen audio separate from the microphone stream.
+let screenSession = null;
+const SCREEN_UID_OFFSET = 1000000000;
+const DEFAULT_SCREEN_VOLUME = 18;
+const remoteScreenVolumes = new Map();
+const remoteScreenTracks = new Map();
+const remoteMediaSubscriptions = new Map();
+const remoteScreenErrors = new Map();
+let watchedScreenUid = null;
 
-// System audio is usually much louder than a processed microphone. Reduce it
-// before Agora mixes both tracks into the remote user's single audio stream.
-const SCREEN_SHARE_AUDIO_GAIN = 0.18;
+// Keep subscribed previews silent. Only the fullscreen viewer opens this gate.
+window.setWatchedScreen = (uid) => {
+  watchedScreenUid = uid == null ? null : String(uid);
+  for (const [owner, tracks] of remoteScreenTracks) {
+    tracks.audio?.setVolume(owner === watchedScreenUid
+      ? (remoteScreenVolumes.get(owner) ?? DEFAULT_SCREEN_VOLUME) : 0);
+  }
+};
+
+// Participant IDs are six-digit numbers. Reserve a disjoint numeric range for
+// their screen publishers, keeping Agora's UID type consistent across clients.
+window.isScreenShareUid = (uid) => {
+  const owner = Number(uid) - SCREEN_UID_OFFSET;
+  return Number.isInteger(owner) && owner >= 100000 && owner <= 999999;
+};
+const screenOwnerUid = (uid) => Number(uid) - SCREEN_UID_OFFSET;
+window.getVoiceParticipantCount = () => window.isVoiceJoined
+  ? 1 + window.client.remoteUsers.filter((user) => !window.isScreenShareUid(user.uid)).length
+  : 0;
 
 // Keep the UI volume stable when Agora republishes/replaces a remote track.
 const remoteVolumes = new Map();
 
-const LOCAL_TRACK_SPEAKING_THRESHOLD = 0.08;
+// Agora 4.24 uses a normalized logarithmic level, not the old weighted FFT
+// level. Its documented speech thresholds are 0.6 locally and 60 remotely.
+// Keeping the old 0.08/8 thresholds would classify faint noise as speech.
+const LOCAL_TRACK_SPEAKING_THRESHOLD = 0.6;
 const LOCAL_VOLUME_POLL_MS = 250;
-const REMOTE_SPEAKING_THRESHOLD = 8;
+const REMOTE_SPEAKING_THRESHOLD = 60;
 let localVolumeMonitor = null;
 
 // ============================================================
@@ -67,7 +90,9 @@ let afkDisconnectTimer = null;
 let lastAfkActivityAt = Date.now();
 
 function isSoloInVoiceChannel() {
-  return (window.client?.remoteUsers?.length || 0) === 0;
+  return !(window.client?.remoteUsers || []).some(
+    (user) => !window.isScreenShareUid?.(user.uid),
+  );
 }
 
 function clearAfkTimers() {
@@ -129,7 +154,7 @@ function startAfkTimer() {
 
 function syncAfkTimerWithOccupancy({ remoteJoined = false, leavingUid = null } = {}) {
   const remainingRemoteUsers = (window.client?.remoteUsers || []).filter(
-    (user) => String(user.uid) !== String(leavingUid),
+    (user) => String(user.uid) !== String(leavingUid) && !window.isScreenShareUid?.(user.uid),
   );
 
   // Event ordering differs between Agora SDK releases, so use the event itself
@@ -208,6 +233,7 @@ async function resolveRemoteName(uid) {
 }
 
 function stopLocalVolumeMonitor() {
+  document.getElementById(`avatar-${window.client.uid}`)?.classList.remove("speaking");
   if (!localVolumeMonitor) return;
   localVolumeMonitor.active = false;
   if (localVolumeMonitor.intervalId) {
@@ -216,7 +242,6 @@ function stopLocalVolumeMonitor() {
   if (localVolumeMonitor.silenceTimer) {
     clearTimeout(localVolumeMonitor.silenceTimer);
   }
-  document.getElementById(`avatar-${window.client.uid}`)?.classList.remove("speaking");
   localVolumeMonitor = null;
 }
 
@@ -237,14 +262,24 @@ function startLocalVolumeMonitor(localAudioTrack) {
     // suspend Web Audio contexts in quiet/background tabs even while the
     // microphone track is still being published, which made real speech look
     // like AFK silence after the warning had appeared.
-    const level = Number(localAudioTrack.getVolumeLevel?.()) || 0;
-    const isSpeaking = !isMuted && level > LOCAL_TRACK_SPEAKING_THRESHOLD;
+    const mediaTrack = localAudioTrack.getMediaStreamTrack?.();
+    const inputMuted = isMuted || localAudioTrack.enabled === false ||
+      localAudioTrack.muted === true || mediaTrack?.muted === true ||
+      mediaTrack?.enabled === false || mediaTrack?.readyState === "ended";
+    const level = inputMuted ? 0 : (Number(localAudioTrack.getVolumeLevel?.()) || 0);
+    const isSpeaking = !inputMuted && level > LOCAL_TRACK_SPEAKING_THRESHOLD;
     if (isSpeaking) markAfkActivity();
 
     const avatar = document.getElementById(`avatar-${window.client.uid}`);
     if (!avatar) return;
 
-    if (isSpeaking) {
+    if (inputMuted) {
+      // Hardware/browser mute can leave a stale nonzero SDK meter reading.
+      avatar.classList.remove("speaking");
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = null;
+      monitor.silenceTimer = null;
+    } else if (isSpeaking) {
       avatar.classList.add("speaking");
       if (silenceTimer) {
         clearTimeout(silenceTimer);
@@ -274,162 +309,184 @@ function startLocalVolumeMonitor(localAudioTrack) {
 // ============================================================
 const screenBtn = document.getElementById("screen-btn");
 
-/**
- * Routes captured system audio through Web Audio so its outgoing level can be
- * reduced. LocalAudioTrack.setVolume only changes local playback, so a custom
- * track is required to change what remote listeners receive.
- */
-async function createAttenuatedScreenAudioTrack(capturedTrack) {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass || !AgoraRTC.createCustomAudioTrack) return capturedTrack;
+// Serialize start/stop so leaving while the capture picker is open cannot
+// strand a publisher or continue sharing after the voice connection is closed.
+if (screenBtn) screenBtn.onclick = async () => {
+  if (screenSession) {
+    await stopScreenShare();
+    return;
+  }
+  if (!window.isVoiceJoined) return;
+
+  const session = { client: null, video: null, audio: null, cancelled: false, capturePending: true };
+  screenSession = session;
+  screenBtn.disabled = true;
+  session.ready = (async () => {
+    let result;
+    try {
+      result = await AgoraRTC.createScreenVideoTrack({
+        encoderConfig: { width: 1920, height: 1080, frameRate: 30, bitrateMax: 4780 },
+        optimizationMode: "motion",
+      }, "auto");
+    } finally {
+      session.capturePending = false;
+    }
+    [session.video, session.audio] = Array.isArray(result) ? result : [result, null];
+    session.video.on("track-ended", () => { void stopScreenShare(); });
+    if (session.cancelled || !window.isVoiceJoined) return;
+
+    // This client only publishes. Never subscribe here, or listeners hear
+    // duplicate playback. The primary client also skips its own screen UID.
+    session.client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+    await session.client.join(
+      window.APP_ID, window.CHANNEL, null, SCREEN_UID_OFFSET + Number(window.client.uid),
+    );
+    if (session.cancelled || !window.isVoiceJoined) return;
+    await session.client.publish(
+      session.audio ? [session.video, session.audio] : session.video,
+    );
+    if (session.cancelled || !window.isVoiceJoined) return;
+    screenBtn.innerHTML = "<span>🖥️</span> Prekini";
+    screenBtn.classList.add("active");
+    session.published = true;
+    window.setLocalScreenSharing?.(window.client.uid, true);
+    if (!session.audio) {
+      window.appendMessage?.("Sistem", "Ekran se deli bez zvuka. Za zvuk ponovo pokreni deljenje i uključi opciju „Share audio” ako je pregledač nudi.", "#fbbf24");
+    }
+  })();
 
   try {
-    screenAudioContext = new AudioContextClass();
-    await screenAudioContext.resume();
-
-    const inputStream = new MediaStream([capturedTrack.getMediaStreamTrack()]);
-    const source = screenAudioContext.createMediaStreamSource(inputStream);
-    const gain = screenAudioContext.createGain();
-    const destination = screenAudioContext.createMediaStreamDestination();
-
-    gain.gain.value = SCREEN_SHARE_AUDIO_GAIN;
-    source.connect(gain).connect(destination);
-
-    screenAudioCaptureTrack = capturedTrack;
-    return AgoraRTC.createCustomAudioTrack({
-      mediaStreamTrack: destination.stream.getAudioTracks()[0],
-    });
+    await session.ready;
+    if (session.cancelled || !window.isVoiceJoined) await stopScreenShare();
   } catch (error) {
-    console.warn("Screen audio attenuation unavailable; using captured audio directly.", error);
-    screenAudioContext?.close?.().catch(() => {});
-    screenAudioContext = null;
-    screenAudioCaptureTrack = null;
-    return capturedTrack;
-  }
-}
-
-if (screenBtn) screenBtn.onclick = async () => {
-  if (!screenTrack) {
-    // --- Start screen share ---
-    try {
-      const result = await AgoraRTC.createScreenVideoTrack(
-        {
-          encoderConfig: {
-            width: 1920, height: 1080,
-            frameRate: 30, bitrateMax: 4780,
-          },
-          optimizationMode: "motion", // Prioritise smoothness over sharpness
-        },
-        "auto" // Capture system audio if the browser/OS supports it
-      );
-
-      // createScreenVideoTrack returns an array when audio is captured,
-      // or a single track when only video is available
-      if (Array.isArray(result)) {
-        screenTrack      = result[0];
-        screenAudioTrack = await createAttenuatedScreenAudioTrack(result[1]);
-      } else {
-        screenTrack      = result;
-        screenAudioTrack = null;
-      }
-
-      // Publish whichever tracks we have
-      await window.client.publish(
-        screenAudioTrack ? [screenTrack, screenAudioTrack] : screenTrack
-      );
-
-      // Update button label to indicate an active share
-      if (screenBtn) {
-        screenBtn.innerHTML = "<span>🖥️</span> Prekini";
-        screenBtn.classList.add("active");
-      }
-
-      // Show the screen feed inside the local user's avatar card
-      window.playVideoInCard(window.client.uid, screenTrack);
-
-      // Stop sharing automatically if the user ends it via the browser UI
-      screenTrack.on("track-ended", stopScreenShare);
-
-    } catch (e) {
-      console.error(e);
-      await stopScreenShare();
-    }
-  } else {
-    // --- Stop screen share ---
-    stopScreenShare();
+    console.error("Screen sharing failed:", error);
+    await stopScreenShare();
+  } finally {
+    screenBtn.disabled = false;
   }
 };
 
-/** Unpublishes and cleans up all screen share tracks */
 async function stopScreenShare() {
-  if (screenTrack) {
-    const track = screenTrack;
-    screenTrack = null;
-    await window.client.unpublish(track).catch(() => {});
-    track.stop();
-    track.close();
-  }
-
-  if (screenAudioTrack) {
-    const track = screenAudioTrack;
-    screenAudioTrack = null;
-    await window.client.unpublish(track).catch(() => {});
-    track.stop();
-    track.close();
-  }
-
-  // When attenuation is active, the browser capture track feeds the custom
-  // published track and must be released separately.
-  if (screenAudioCaptureTrack) {
-    screenAudioCaptureTrack.stop();
-    screenAudioCaptureTrack.close();
-    screenAudioCaptureTrack = null;
-  }
-
-  if (screenAudioContext) {
-    await screenAudioContext.close().catch(() => {});
-    screenAudioContext = null;
-  }
-
-  // Restore button to its default state
-  if (screenBtn) {
-    screenBtn.innerHTML = "<span>🖥️</span> Podeli ekran";
-    screenBtn.classList.remove("active");
-  }
-
-  // Remove the video overlay from the local user's card
-  window.removeVideoFromCard(window.client.uid);
+  const session = screenSession;
+  if (!session) return;
+  session.cancelled = true;
+  // A browser capture picker cannot be cancelled programmatically. Let voice
+  // leave immediately; the pending start closes any later capture result.
+  if (session.capturePending) return;
+  if (session.stopping) return session.stopping;
+  session.stopping = (async () => {
+    await session.ready.catch(() => {});
+    // Close capture immediately, even if the network is unavailable.
+    for (const track of [session.video, session.audio]) {
+      track?.stop();
+      track?.close();
+    }
+    await session.client?.leave().catch((error) => console.warn("Screen client leave failed:", error));
+    window.setLocalScreenSharing?.(window.client.uid, false);
+    screenSession = null;
+    if (screenBtn) {
+      screenBtn.innerHTML = "<span>🖥️</span> Podeli ekran";
+      screenBtn.classList.remove("active");
+    }
+  })();
+  return session.stopping;
 }
+
+// Presence can render the card after media arrives. Reapply the cached tracks
+// and controls whenever the card is created or updated.
+window.syncScreenShareCard = (uid) => {
+  if (String(uid) === String(window.client.uid)) {
+    window.setLocalScreenSharing?.(uid, !!screenSession?.published && !screenSession.cancelled);
+    return;
+  }
+  const tracks = remoteScreenTracks.get(String(uid));
+  if (tracks?.video) window.playVideoInCard(uid, tracks.video);
+  window.setScreenAudioAvailable?.(uid, !!tracks?.audio, !!(tracks?.video || tracks?.audio));
+};
 
 // ============================================================
 // AGORA EVENT LISTENERS
 // ============================================================
 
+window.setRemotePlaybackDevice = async (track, deviceId) => {
+  if (window.supportsSpeakerSelection?.() === false) return;
+  try {
+    await track.setPlaybackDevice(deviceId);
+  } catch (error) {
+    console.warn("Speaker selection failed:", error);
+  }
+};
+
 /**
  * Fired when a remote user publishes an audio or video track.
- * Subscribe immediately, then resolve the real display name from Firebase
- * before rendering the card — this avoids showing a raw numeric UID.
+ * Subscribe through the primary client and route screen media to its owner's
+ * card. Firebase presence remains responsible for creating participant cards.
  */
 window.client.on("user-published", async (user, mediaType) => {
-  await window.client.subscribe(user, mediaType);
+  if (mediaType !== "audio" && mediaType !== "video") return;
+  const isScreen = window.isScreenShareUid(user.uid);
+  const ownerUid = isScreen ? screenOwnerUid(user.uid) : user.uid;
+  if (isScreen && String(ownerUid) === String(window.client.uid)) return;
+  const key = `${user.uid}:${mediaType}`;
+  const subscription = {};
+  remoteMediaSubscriptions.set(key, subscription);
+  const isCurrent = () => remoteMediaSubscriptions.get(key) === subscription;
+  try {
+    const subscribedTrack = await window.client.subscribe(user, mediaType);
+    // Match Agora users by UID, not JavaScript object identity. Invalidate the
+    // request on unpublish/leave so delayed results cannot revive old media.
+    const currentUser = window.client.remoteUsers.find((remote) => String(remote.uid) === String(user.uid));
+    if (!isCurrent() || !currentUser) return;
+    const track = subscribedTrack || (mediaType === "audio" ? currentUser.audioTrack : currentUser.videoTrack);
+    if (!track) throw new Error(`No ${mediaType} track returned after subscribing`);
 
-  if (mediaType === "audio") {
-    user.audioTrack.play();
-    user.audioTrack.setVolume(remoteVolumes.get(String(user.uid)) ?? 100);
-  }
-
-  if (mediaType === "video") {
-    window.playVideoInCard(user.uid, user.videoTrack);
+    if (isScreen) {
+      remoteScreenErrors.delete(key);
+      const tracks = remoteScreenTracks.get(String(ownerUid)) || {};
+      tracks[mediaType] = track;
+      remoteScreenTracks.set(String(ownerUid), tracks);
+      // Show available controls before playback or speaker selection, neither
+      // of which should prevent a successfully received stream reaching the UI.
+      window.syncScreenShareCard(ownerUid);
+    }
+    if (mediaType === "audio") {
+      const volume = isScreen
+        ? (watchedScreenUid === String(ownerUid) ? (remoteScreenVolumes.get(String(ownerUid)) ?? DEFAULT_SCREEN_VOLUME) : 0)
+        : (remoteVolumes.get(String(ownerUid)) ?? 100);
+      track.setVolume(volume);
+      const device = localStorage.getItem("speaker-device");
+      if (device && track.setPlaybackDevice) {
+        // Firefox does not support selecting an output device in Agora. A
+        // rejected device change must not interrupt playback or screen UI.
+        void window.setRemotePlaybackDevice(track, device);
+      }
+      track.play();
+    } else if (!isScreen) {
+      window.playVideoInCard(ownerUid, track);
+    }
+  } catch (error) {
+    if (!isCurrent()) return;
+    const detail = String(error?.code || error?.message || error);
+    if (isScreen) remoteScreenErrors.set(key, detail);
+    console.error(`Could not receive ${isScreen ? "screen " : ""}${mediaType} from ${user.uid}:`, error);
   }
 });
 
-/** Fired when a remote user unpublishes an audio or video track.
- *  We remove video share screen wrapper after user stops sharing
- */
 window.client.on("user-unpublished", (user, mediaType) => {
-  if (mediaType === "video") {
-    window.removeVideoFromCard(user.uid);
+  remoteMediaSubscriptions.delete(`${user.uid}:${mediaType}`);
+  remoteScreenErrors.delete(`${user.uid}:${mediaType}`);
+  const isScreen = window.isScreenShareUid(user.uid);
+  const ownerUid = isScreen ? screenOwnerUid(user.uid) : user.uid;
+  if (isScreen && String(ownerUid) === String(window.client.uid)) return;
+  if (isScreen) {
+    if (mediaType === "video" && watchedScreenUid === String(ownerUid)) window.setWatchedScreen(null);
+    const tracks = remoteScreenTracks.get(String(ownerUid));
+    tracks?.[mediaType]?.stop();
+    if (tracks) delete tracks[mediaType];
+    window.syncScreenShareCard(ownerUid);
   }
+  if (!isScreen && mediaType === "audio") window.clearSpeakingIndicator(ownerUid);
+  if (mediaType === "video") window.removeVideoFromCard(ownerUid);
 });
 
 /**
@@ -438,9 +495,27 @@ window.client.on("user-unpublished", (user, mediaType) => {
  * removal so a temporary Agora disconnect cannot hide a still-present user.
  */
 window.client.on("user-left", (user) => {
+  for (const mediaType of ["audio", "video"]) {
+    remoteMediaSubscriptions.delete(`${user.uid}:${mediaType}`);
+    remoteScreenErrors.delete(`${user.uid}:${mediaType}`);
+  }
+  if (window.isScreenShareUid(user.uid)) {
+    const ownerUid = screenOwnerUid(user.uid);
+    if (String(ownerUid) === String(window.client.uid)) return;
+    if (watchedScreenUid === String(ownerUid)) window.setWatchedScreen(null);
+    const tracks = remoteScreenTracks.get(String(ownerUid));
+    tracks?.audio?.stop();
+    tracks?.video?.stop();
+    remoteScreenTracks.delete(String(ownerUid));
+    window.removeVideoFromCard(ownerUid);
+    window.syncScreenShareCard(ownerUid);
+    return;
+  }
+  window.clearSpeakingIndicator(user.uid);
   const displayName = window.getDisplayName(user.uid);
   delete window.uidNameMap[user.uid];
   remoteVolumes.delete(String(user.uid));
+  remoteScreenVolumes.delete(String(user.uid));
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
@@ -455,6 +530,7 @@ window.client.on("user-left", (user) => {
  * and plays a higher tone to signal arrival.
  */
 window.client.on("user-joined", async (user) => {
+  if (window.isScreenShareUid?.(user.uid)) return;
   const identity = await resolveRemoteName(user.uid);
   if (!identity) return;
 
@@ -475,11 +551,29 @@ window.client.on("user-joined", async (user) => {
 const speakingTimers = new Map();
 const SPEAKING_LINGER_MS = 400;
 
+window.clearSpeakingIndicator = (uid) => {
+  const key = String(uid);
+  if (speakingTimers.has(key)) {
+    clearTimeout(speakingTimers.get(key));
+    speakingTimers.delete(key);
+  }
+  document.getElementById(`avatar-${uid}`)?.classList.remove("speaking");
+};
+
 window.client.on("volume-indicator", (volumes) => {
   volumes.forEach((vol) => {
-    const id = vol.uid === 0 ? window.client.uid : vol.uid;
+    if (window.isScreenShareUid(vol.uid)) return;
+    // The microphone monitor exclusively owns the local indicator. Agora can
+    // still report local levels while the microphone is disabled.
+    const id = String(vol.uid);
+    if (id === "0" || id === String(window.client.uid)) return;
     const avatar = document.getElementById(`avatar-${id}`);
     if (!avatar) return;
+    const remote = window.client.remoteUsers.find((user) => String(user.uid) === id);
+    if (avatar.classList.contains("muted") || remote?.hasAudio === false) {
+      window.clearSpeakingIndicator(id);
+      return;
+    }
 
     if (vol.level > REMOTE_SPEAKING_THRESHOLD) {
       avatar.classList.add("speaking");
@@ -574,13 +668,14 @@ if (joinBtn) joinBtn.onclick = async () => {
 
     // --- 3. JOIN AGORA CHANNEL ---
     await window.client.join(window.APP_ID, window.CHANNEL, null, window.myAgoraUID);
-    window.client.enableAudioVolumeIndicator(200, 3);
+    window.client.enableAudioVolumeIndicator();
 
     // --- 4. PUBLISH AUDIO TRACK ---
     startLocalVolumeMonitor(localTracks.audioTrack);
     await window.client.publish(localTracks.audioTrack);
     window.isVoiceJoined = true;
     startAfkTimer();
+    void window.loadSpeakers?.();
 
     // --- 5. PRESENCE IDENTITY IS NOW MARKED AS VOICE-JOINED ---
     window.uidNameMap[window.client.uid] = window.myDisplayName;
@@ -609,6 +704,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
     window.isVoiceJoined = false;
+    window.setWatchedScreen(null);
     clearAfkTimers();
     stopLocalVolumeMonitor();
     if (localTracks.audioTrack) {
@@ -642,6 +738,7 @@ async function leaveChannel(reason = "manual") {
   isLeavingChannel = true;
   try {
     window.isVoiceJoined = false;
+    window.setWatchedScreen(null);
     clearAfkTimers();
 
     // --- 1. WAKE LOCK ---
@@ -651,7 +748,7 @@ async function leaveChannel(reason = "manual") {
     }
 
     // --- 2. SCREEN SHARE ---
-    if (screenTrack) await stopScreenShare();
+    await stopScreenShare();
 
     // --- 3. LOCAL AUDIO TRACK ---
     stopLocalVolumeMonitor();
@@ -674,6 +771,14 @@ async function leaveChannel(reason = "manual") {
     speakingTimers.forEach((timer) => clearTimeout(timer));
     speakingTimers.clear();
     remoteVolumes.clear();
+    remoteScreenVolumes.clear();
+    for (const uid of remoteScreenTracks.keys()) {
+      window.removeVideoFromCard(uid);
+      window.setScreenAudioAvailable?.(uid, false);
+    }
+    remoteScreenTracks.clear();
+    remoteMediaSubscriptions.clear();
+    remoteScreenErrors.clear();
 
     // --- 6. BUTTONS ---
     const leaveBtn = document.getElementById("leave-btn");
@@ -720,26 +825,47 @@ if (leaveBtn) leaveBtn.onclick = () => leaveChannel("manual");
 // MUTE TOGGLE
 // Enables/disables the local audio track without unpublishing it
 // ============================================================
+let muteToggleInFlight = false;
 window.toggleMute = async () => {
-  if (!localTracks.audioTrack) return;
+  if (!localTracks.audioTrack || muteToggleInFlight) return;
+  const audioTrack = localTracks.audioTrack;
+  const uid = window.client.uid;
+  muteToggleInFlight = true;
+  const wasMuted = isMuted;
+  isMuted = !wasMuted;
 
-  isMuted = !isMuted;
+  if (isMuted) {
+    stopLocalVolumeMonitor();
+    window.clearSpeakingIndicator(window.client.uid);
+  }
 
-  // setEnabled(false) mutes without destroying the track
-  await localTracks.audioTrack.setEnabled(!isMuted);
+  try {
+    // setEnabled(false) disables microphone publishing without destroying it.
+    await audioTrack.setEnabled(!isMuted);
+  } catch (error) {
+    if (localTracks.audioTrack !== audioTrack) return;
+    isMuted = wasMuted;
+    if (!isMuted && localTracks.audioTrack) startLocalVolumeMonitor(localTracks.audioTrack);
+    console.error("Microphone mute change failed:", error);
+    return;
+  } finally {
+    muteToggleInFlight = false;
+  }
+  // A user can leave while the SDK is toggling capture. Do not restore the
+  // old call's UI or write presence under an undefined/new participant UID.
+  if (localTracks.audioTrack !== audioTrack) return;
 
-  if (!isMuted) {
-    startLocalVolumeMonitor(localTracks.audioTrack); // ← restart fresh
+  if (!isMuted && localTracks.audioTrack) {
+    startLocalVolumeMonitor(localTracks.audioTrack);
   }
 
   // Update mute state in Firebase so remote users can see it in their UI
   firebase.database()
-  .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
+  .ref(`presence/${window.CHANNEL}/${uid}`)
   .update({ muted: isMuted });
 
   // Visually dim the local avatar when muted
-  const avatarEl = document.getElementById(`avatar-${window.client.uid}`);
-  if (avatarEl) avatarEl.classList.toggle("muted", isMuted);
+  window.setUserMuted(window.client.uid, isMuted);
 
   // Reflect mute state in the header status text
   const s = document.getElementById("status");
@@ -759,3 +885,34 @@ window.adjustVolume = (uid, vol) => {
   const user = window.client.remoteUsers.find((u) => u.uid == uid);
   if (user?.audioTrack) user.audioTrack.setVolume(volume);
 };
+
+window.getRemoteVolume = (uid, kind = "voice") => kind === "screen"
+  ? (remoteScreenVolumes.get(String(uid)) ?? DEFAULT_SCREEN_VOLUME)
+  : (remoteVolumes.get(String(uid)) ?? 100);
+
+window.adjustScreenVolume = (uid, vol) => {
+  const volume = Math.max(0, Math.min(100, Number.parseInt(vol, 10) || 0));
+  remoteScreenVolumes.set(String(uid), volume);
+  remoteScreenTracks.get(String(uid))?.audio?.setVolume(watchedScreenUid === String(uid) ? volume : 0);
+};
+
+// Read-only diagnostics for cross-browser screen-share troubleshooting.
+window.getScreenShareStatus = () => ({
+  sdkVersion: AgoraRTC.VERSION,
+  receiverVersion: "screen-audio-7",
+  watchedScreenUid,
+  connection: window.client.connectionState,
+  users: window.client.remoteUsers.map((user) => {
+    const isScreen = window.isScreenShareUid(user.uid);
+    const ownerUid = isScreen ? screenOwnerUid(user.uid) : user.uid;
+    const tracks = remoteScreenTracks.get(String(ownerUid));
+    return {
+      uid: user.uid, ownerUid, isScreen,
+      publishedAudio: user.hasAudio, publishedVideo: user.hasVideo,
+      receivedScreenAudio: !!tracks?.audio, receivedScreenVideo: !!tracks?.video,
+      ownerCardPresent: !!document.getElementById(`user-${ownerUid}`),
+      audioError: remoteScreenErrors.get(`${user.uid}:audio`) || null,
+      videoError: remoteScreenErrors.get(`${user.uid}:video`) || null,
+    };
+  }),
+});

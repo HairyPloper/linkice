@@ -833,7 +833,7 @@ function handleCommand(text) {
     case "/ping":
       if (window.client && typeof window.client.getRTCStats === "function") {
         const rtc = window.client.getRTCStats();
-        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${rtc.UserCount}`, "#fbbf24");
+        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${window.getVoiceParticipantCount()}`, "#fbbf24");
       }
       return true;
 
@@ -1039,8 +1039,7 @@ function startChat() {
       }
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
-      const avatar = document.getElementById(`avatar-${uid}`);
-      if (avatar) avatar.classList.toggle("muted", data.muted === true);
+      window.setUserMuted(uid, data.muted === true);
     });
 }
 
@@ -1056,6 +1055,7 @@ function startPresenceListener() {
       if (data.voiceJoined === false) return;
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
+      window.setUserMuted(uid, data.muted === true);
     });
 
   firebase.database()

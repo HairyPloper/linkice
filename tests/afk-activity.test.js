@@ -146,10 +146,8 @@ test("local speech uses Agora track volume without an AudioContext", () => {
 
   const monitorSource = sourceBetween("function stopLocalVolumeMonitor", "// SCREEN SHARE");
   vm.runInContext(`
-    let localVolumeMonitor = null;
     let isMuted = false;
-    const LOCAL_TRACK_SPEAKING_THRESHOLD = 0.08;
-    const LOCAL_VOLUME_POLL_MS = 250;
+    ${sourceBetween("const LOCAL_TRACK_SPEAKING_THRESHOLD", "// AFK AUTO-DISCONNECT")}
     function markAfkActivity() { globalThis.activityCount++; }
     ${monitorSource}
   `, context);
@@ -157,7 +155,8 @@ test("local speech uses Agora track volume without an AudioContext", () => {
 
   let level = 0;
   context.startLocalVolumeMonitor({ getVolumeLevel: () => level });
-  level = 0.2;
+  // Agora's current normalized meter treats levels above 0.6 as speech.
+  level = 0.7;
   clock.advance(250);
 
   assert.equal(context.activityCount, 1);
