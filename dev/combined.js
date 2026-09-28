@@ -1306,12 +1306,14 @@ async function stopScreenShare() {
   if (session.capturePending) return;
   if (session.stopping) return session.stopping;
   session.stopping = (async () => {
-    await session.ready.catch(() => {});
-    // Close capture immediately, even if the network is unavailable.
+    // Install the shared stopping promise before close can fire track-ended.
+    await Promise.resolve();
+    // Release captured media before waiting on a possibly disconnected SDK.
     for (const track of [session.video, session.audio]) {
       track?.stop();
       track?.close();
     }
+    await session.ready.catch(() => {});
     await session.client?.leave().catch((error) => console.warn("Screen client leave failed:", error));
     window.setLocalScreenSharing?.(window.client.uid, false);
     screenSession = null;
@@ -1528,7 +1530,11 @@ window.client.on("volume-indicator", (volumes) => {
 // and posts system messages on disconnect/reconnect events.
 // Note: Agora automatically tries to reconnect, so we don't need to do anything here
 // except update the UI to keep the user informed. */
-window.client.on("connection-state-change", (curState, prevState) => {
+window.client.on("connection-state-change", async (curState, prevState) => {
+  if (curState === "DISCONNECTED" && window.isVoiceJoined && !isLeavingChannel &&
+      (prevState === "RECONNECTING" || prevState === "CONNECTED")) {
+    await leaveChannel("connection-lost");
+  }
   const s = document.getElementById("status");
   if (!s) return;
 
@@ -1537,11 +1543,9 @@ window.client.on("connection-state-change", (curState, prevState) => {
     s.style.color = "#fbbf24";
   }
 
-  if (curState === "DISCONNECTED" && prevState === "RECONNECTING") {
+  if (curState === "DISCONNECTED" && (prevState === "RECONNECTING" || prevState === "CONNECTED")) {
     s.innerText   = "Veza prekinuta";
     s.style.color = "#f87171";
-    if (window.appendMessage)
-      window.appendMessage("Sistem", "Veza je prekinuta.", "#f87171");
   }
 
   if (curState === "CONNECTED" && prevState === "RECONNECTING") {
@@ -1674,14 +1678,11 @@ async function leaveChannel(reason = "manual") {
 
     // --- 1. WAKE LOCK ---
     if (window.wakeLock) {
-      await window.wakeLock.release();
+      void window.wakeLock.release().catch((error) => console.warn("Wake lock release failed:", error));
       window.wakeLock = null;
     }
 
-    // --- 2. SCREEN SHARE ---
-    await stopScreenShare();
-
-    // --- 3. LOCAL AUDIO TRACK ---
+    // --- 2. LOCAL AUDIO TRACK ---
     stopLocalVolumeMonitor();
     if (localTracks.audioTrack) {
       localTracks.audioTrack.stop();
@@ -1689,13 +1690,19 @@ async function leaveChannel(reason = "manual") {
       localTracks.audioTrack = null;
     }
 
+    // --- 3. SCREEN SHARE ---
+    const screenCleanup = stopScreenShare();
+    if (reason === "connection-lost") void screenCleanup.catch((error) => console.warn("Screen cleanup failed:", error));
+    else await screenCleanup;
+
     // --- 4. AGORA CLIENT and PRESENCE ---
-    await window.client.leave();
-    try {
-      await window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: false });
-    } catch (presenceError) {
+    const voiceCleanup = window.client.leave().catch((error) => console.warn("Voice client leave failed:", error));
+    if (reason !== "connection-lost") await voiceCleanup;
+    // Firebase writes can wait indefinitely while offline. Local microphone
+    // and UI cleanup must not wait for the presence transaction to reconnect.
+    void window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: false }).catch((presenceError) => {
       console.error("Chat identity could not be preserved after leaving voice:", presenceError);
-    }
+    });
 
     // --- 5. RESET LOCAL STATE ---
     isMuted = false;
@@ -1739,7 +1746,7 @@ async function leaveChannel(reason = "manual") {
     if (window.appendMessage) {
       const leaveMessage = reason === "afk"
         ? AFK_MESSAGES.disconnected
-        : "Izašao si iz kanala.";
+        : reason === "connection-lost" ? "Veza je prekinuta. Možeš ponovo da se povežeš." : "Izašao si iz kanala.";
       window.appendMessage("Sistem", leaveMessage, "#fbbf24");
     }
   } finally {
@@ -2521,8 +2528,11 @@ function renderPoll(msgDiv, snapshotKey, data, color, timeString) {
 // SEND MESSAGE
 // Validates input, records history, checks for a command, then pushes to Firebase
 // ============================================================
+let messageSendPending = false;
 window.sendMessage = async () => {
-  const text = (chatInput && chatInput.value ? chatInput.value : "").trim();
+  if (messageSendPending) return;
+  const draft = chatInput?.value || "";
+  const text = draft.trim();
   if (!text || !window.chatRef) return;
 
   // Record in command history (capped at 50 entries)
@@ -2538,10 +2548,13 @@ window.sendMessage = async () => {
   }
 
   // Push regular message to Firebase Realtime Database
+  messageSendPending = true;
+  if (sendBtn) sendBtn.disabled = true;
   try {
     // Ensure push subscription from a chat user gesture (not only voice join).
     if (window.notificationManager && !window.notificationManager.hasEnsuredPushThisSession) {
-      await window.notificationManager.ensurePushSubscription(true);
+      // Optional notifications must never block chat delivery.
+      void window.notificationManager.ensurePushSubscription(true).catch(() => {});
     }
 
     await window.chatRef.push({
@@ -2549,17 +2562,22 @@ window.sendMessage = async () => {
       text:      text,
       color:     window.myColor || "#805ff5",
       ...getChatSenderMetadata(),
-      timestamp: Date.now(),
+      timestamp: firebase.database.ServerValue.TIMESTAMP,
     });
-    chatInput.value = "";
+    // The user may already be composing their next message.
+    if (chatInput.value === draft) chatInput.value = "";
     chatInput.focus();
 
     // Trigger a global push notification for firebase notification subscribers (e.g. mobile users who have left the tab)
     if (window.notificationManager) {
-    window.notificationManager.triggerGlobalPush(window.myDisplayName, text);
-  }
+      window.notificationManager.triggerGlobalPush(window.myDisplayName, text);
+    }
   } catch (err) {
     console.error("Greška pri slanju:", err);
+    window.appendMessage("Sistem", "Poruka nije poslata. Pokušaj ponovo.", "#ef4444");
+  } finally {
+    messageSendPending = false;
+    if (sendBtn) sendBtn.disabled = false;
   }
 };
 
@@ -2833,20 +2851,23 @@ function startChat() {
       gameRef.transaction((game) => {
         // If there's no active game, or the guess is from the drawer, or it's incorrect, abort the transaction
         if (!game || !game.active) return;
+        // child_added replays history on every join. Only messages created
+        // during this round can be guesses (timestamps come from Firebase).
+        if (typeof game.startedAt !== "number" || typeof message.timestamp !== "number" ||
+            message.timestamp < game.startedAt ||
+            (game.endsAt && message.timestamp > game.endsAt)) return;
         const isDrawerGuess = game.drawerSessionId && message.senderSessionId
           ? String(message.senderSessionId) === String(game.drawerSessionId)
           : (message.username || "") === game.drawer;
         if (isDrawerGuess) return;
         if ((message.text || "").toLowerCase().trim() !== game.word.toLowerCase()) return;
-        // show to all users a confetti celebration for the correct guess
-        if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
-        // Re-enable the "Get Word" button for the next game
-        if (window.resetWordButton) window.resetWordButton();
         // update the game state to mark it as inactive (ended)
         return { ...game, active: false };
       }, (error, committed, snapshot) => {
         if (!committed) return;
         const game = snapshot.val();
+        if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
+        if (window.resetWordButton) window.resetWordButton();
         // Announce the winner in chat and clean up the game state
         window.chatRef.push({
           username:  "Sistem",
@@ -2854,7 +2875,8 @@ function startChat() {
           color:     "#fbbf24",
           timestamp: Date.now(),
         });
-        gameRef.remove();
+        // A new round can start while the winning transaction completes.
+        gameRef.transaction((current) => current?.roundId === game.roundId && !current.active ? null : undefined);
         clearInterval(window.timerInterval);
       });
     }
@@ -2921,8 +2943,10 @@ function startPresenceListener() {
 // Uses a Firebase transaction to safely increment a vote counter
 // Prevents double-voting by recording the poll ID in localStorage
 // ============================================================
-window.vote = (pollId, option) => {
+const pendingVotes = new Set();
+window.vote = async (pollId, option) => {
   const votedKey = `voted_${pollId}`;
+  if (pendingVotes.has(votedKey)) return;
   if (localStorage.getItem(votedKey)) {
     window.appendMessage("Sistem", "Već si glasao u ovoj anketi.", "#ef4444");
     return;
@@ -2930,11 +2954,17 @@ window.vote = (pollId, option) => {
 
   const pollRef = window.chatRef.child(`${pollId}/votes/${getPollVoteKey(option)}`);
 
-  // Atomic increment — safe under concurrent updates
-  pollRef.transaction((currentVotes) => (currentVotes || 0) + 1);
-
-  // Mark as voted so the user can't vote again in this session
-  localStorage.setItem(votedKey, "true");
+  pendingVotes.add(votedKey);
+  try {
+    const result = await pollRef.transaction((currentVotes) => (currentVotes || 0) + 1);
+    if (!result.committed) throw new Error("Vote was not committed");
+    localStorage.setItem(votedKey, "true");
+  } catch (error) {
+    console.error("Vote failed:", error);
+    window.appendMessage("Sistem", "Glas nije sačuvan. Pokušaj ponovo.", "#ef4444");
+  } finally {
+    pendingVotes.delete(votedKey);
+  }
 };
 
 // ============================================================
@@ -3453,6 +3483,8 @@ function initWhiteboard() {
     wordBtn.classList.toggle('is-disabled', true);
 
     gameRef.set({
+      roundId: gameRef.push().key,
+      startedAt: firebase.database.ServerValue.TIMESTAMP,
       word:   word,
       drawer: window.myDisplayName,
       drawerSessionId: String(window.myAgoraUID),
