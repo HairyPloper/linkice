@@ -76,9 +76,20 @@ async function clearUnreadSpace(space) {
   notifications.forEach((notification) => notification.close());
 }
 
-async function hasVisibleClient() {
+async function hasVisibleClient(space) {
   const clientList = await clients.matchAll({ type: "window", includeUncontrolled: true });
-  return clientList.some((client) => client.visibilityState === "visible");
+  const cache = await caches.open(NOTIFICATION_STATE_CACHE);
+  for (const client of clientList) {
+    if (client.visibilityState !== "visible" || !client.url.startsWith(self.registration.scope)) continue;
+    // A bare app URL can use a saved room, so remember the room reported by
+    // each window instead of guessing from the most recently visited tab.
+    const recorded = client.id && await cache.match(new Request(
+      new URL(`__notification_state__/client-${encodeURIComponent(client.id)}`, self.registration.scope),
+    ));
+    const currentSpace = recorded ? await recorded.text() : new URL(client.url).searchParams.get("space");
+    if (currentSpace && normalizeSpace(currentSpace).toLowerCase() === space.toLowerCase()) return true;
+  }
+  return false;
 }
 
 async function handlePush(event) {
@@ -101,7 +112,7 @@ async function handlePush(event) {
     const space = await getPayloadSpace(payload);
 
     // A visible app has already displayed the message, so it is not unread.
-    if (await hasVisibleClient()) {
+    if (await hasVisibleClient(space)) {
       await clearUnreadSpace(space);
       return;
     }
@@ -155,6 +166,10 @@ self.addEventListener("message", (event) => {
   event.waitUntil(Promise.all([
     recordVisitedSpace(space),
     clearUnreadSpace(space),
+    event.source?.id ? caches.open(NOTIFICATION_STATE_CACHE).then((cache) => cache.put(
+      new Request(new URL(`__notification_state__/client-${encodeURIComponent(event.source.id)}`, self.registration.scope)),
+      new Response(space),
+    )) : Promise.resolve(),
   ]));
 });
 
