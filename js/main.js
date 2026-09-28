@@ -373,18 +373,24 @@ window.audioSettings = audioSettings;
 // devices and saves the user's choice in localStorage.
 // Note: Browsers require a media permission to access device labels, so we only load the speakers after the user clicks "Join Call" and grants permission.
 // ============================================================
-const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
-
-if (!isMobile) {
-  document.getElementById("join-btn").addEventListener("click", async () => {
-    await loadSpeakers();
-  });
-}
+window.supportsSpeakerSelection = () =>
+  !/iPhone|iPad|Android|Firefox|FxiOS/i.test(navigator.userAgent) &&
+  /Chrome\/|Chromium\/|Edg\//.test(navigator.userAgent) &&
+  typeof HTMLMediaElement !== "undefined" &&
+  typeof HTMLMediaElement.prototype.setSinkId === "function";
 
 async function loadSpeakers() {
-  // Browser requires a media permission before listing devices with labels
-  // Joining the call grants that permission, so we call this after join click
-  const devices = await AgoraRTC.getPlaybackDevices();
+  // Run after successful join, not concurrently with microphone acquisition.
+  // Agora does not support output switching on Firefox or Safari.
+  if (!window.supportsSpeakerSelection()) return;
+  let devices;
+  try {
+    devices = await AgoraRTC.getPlaybackDevices(true);
+  } catch (error) {
+    console.warn("Speaker enumeration unavailable:", error);
+    return;
+  }
+  if (!window.isVoiceJoined) return;
   if (!devices.length) return;
 
   const select = document.getElementById("speaker-select");
@@ -401,13 +407,13 @@ async function loadSpeakers() {
 
   // Restore saved selection
   const saved = localStorage.getItem("speaker-device");
-  if (saved) select.value = saved;
+  if (saved && devices.some((device) => device.deviceId === saved)) select.value = saved;
 
   select.onchange = (e) => {
     const deviceId = e.target.value;
     localStorage.setItem("speaker-device", deviceId);
     window.client.remoteUsers.forEach(user => {
-      if (user.audioTrack) user.audioTrack.setPlaybackDevice(deviceId);
+      if (user.audioTrack) void window.setRemotePlaybackDevice(user.audioTrack, deviceId);
     });
   };
 

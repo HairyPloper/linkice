@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="sr">
+<meta charset="utf-8">
+<title>Screen player interaction check</title>
+<link rel="stylesheet" href="../../css/style.css">
+<style>
+body { background: #0b1020; }
+.screen-media canvas { width:100%; height:100%; object-fit:contain; }
+#checks { position:fixed;bottom:16px;left:16px;max-width:600px;font:14px system-ui;color:white; }
+#checks button { padding:10px; }
+</style>
+<div id="user-grid"></div>
+<aside id="checks">
+  <button id="screen-btn">Share locally</button>
+  <button id="remote-start">Start remote share</button>
+  <button id="remote-stop">Stop remote share</button>
+  <button id="remote-audio">Toggle remote audio</button>
+  <p id="levels"></p>
+  <p>This fixture uses simulated tracks, no devices or network connections. Click the preview for native fullscreen. Move near the bottom, adjust volume, then press Escape.</p>
+</aside>
+<script>
+const gains = {voice:0,screen:0};
+window.animals = ['🐢'];
+window.isVoiceJoined = true;
+window.APP_ID = 'fixture'; window.CHANNEL = 'fixture';
+function audioTrack(kind) { return {setVolume(value){gains[kind]=value;}, play(){}, stop(){gains[kind]=0;}, close(){}}; }
+function videoTrack() { return {on(){},stop(){},close(){},play(id){
+  const canvas = document.createElement('canvas'); canvas.width=1280;canvas.height=720;
+  const ctx=canvas.getContext('2d'); const gradient=ctx.createLinearGradient(0,0,1280,720);
+  gradient.addColorStop(0,'#172554');gradient.addColorStop(1,'#065f46');
+  ctx.fillStyle=gradient;ctx.fillRect(0,0,1280,720);
+  ctx.fillStyle='white';ctx.font='52px system-ui';ctx.fillText('Shared screen',80,310);
+  ctx.fillStyle='#a7f3d0';ctx.font='26px system-ui';ctx.fillText('Move to the bottom to adjust screen volume',80,370);
+  document.getElementById(id).replaceChildren(canvas);
+}}; }
+window.AgoraRTC = {
+  createClient(){return {uid:123456,remoteUsers:[],handlers:{},on(event,handler){this.handlers[event]=handler;},async join(){},async publish(){},async leave(){},async subscribe(user,kind){return user[kind+'Track'];}};},
+  async createScreenVideoTrack(){return [videoTrack(),audioTrack('local')];}
+};
+</script>
+<script src="../../js/ui.js"></script>
+<script src="../../js/rtc.js"></script>
+<script>
+drawUser(123456,'Local sharer','🐢',true);
+drawUser(234567,'Remote sharer','🦊');
+document.getElementById('user-234567').classList.add('active');
+const voice={uid:234567,audioTrack:audioTrack('voice')};
+const screen={uid:1000234567,videoTrack:videoTrack(),audioTrack:audioTrack('screen')};
+client.remoteUsers=[voice];
+client.handlers['user-published'](voice,'audio');
+let sharing=false, hasAudio=true;
+document.getElementById('remote-start').onclick=async()=>{
+  if(sharing)return;sharing=true;hasAudio=true;client.remoteUsers.push(screen);
+  await client.handlers['user-published'](screen,'video');
+  await client.handlers['user-published'](screen,'audio');
+};
+document.getElementById('remote-stop').onclick=()=>{
+  client.handlers['user-unpublished'](screen,'video');client.handlers['user-unpublished'](screen,'audio');
+  client.remoteUsers=[voice];sharing=false;
+};
+document.getElementById('remote-audio').onclick=()=>{
+  if(!sharing)return;hasAudio=!hasAudio;
+  client.handlers[hasAudio?'user-published':'user-unpublished'](screen,'audio');
+};
+setInterval(()=>{document.getElementById('levels').textContent=JSON.stringify({gains,watching:getScreenShareStatus().watchedScreenUid,fullscreen:document.fullscreenElement?.id||null});},100);
+</script>
+</html>

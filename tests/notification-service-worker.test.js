@@ -9,11 +9,11 @@ function createServiceWorker() {
   const cacheEntries = new Map();
   const notifications = [];
   const openedUrls = [];
-  let visible = false;
+  let visibleClients = [];
 
   const cache = {
     async match(request) {
-      return cacheEntries.get(request.url);
+      return cacheEntries.get(request.url)?.clone();
     },
     async put(request, response) {
       cacheEntries.set(request.url, response);
@@ -49,7 +49,7 @@ function createServiceWorker() {
     caches: { async open() { return cache; } },
     clients: {
       async matchAll() {
-        return visible ? [{ visibilityState: "visible" }] : [];
+        return visibleClients;
       },
       async openWindow(url) {
         openedUrls.push(url);
@@ -78,9 +78,10 @@ function createServiceWorker() {
   return {
     notifications,
     openedUrls,
-    setVisible(value) { visible = value; },
-    async visit(space) {
-      await dispatch("message", { data: { type: "SPACE_VISITED", space } });
+    setVisible(value) { visibleClients = value ? [{id:"one", url:"https://example.test/app/?space=gaming",visibilityState:"visible"}] : []; },
+    setClients(value) { visibleClients = value; },
+    async visit(space, clientId = "one") {
+      await dispatch("message", { source:{id:clientId}, data: { type: "SPACE_VISITED", space } });
     },
     async push(payload) {
       await dispatch("push", { data: { json: () => payload } });
@@ -143,4 +144,29 @@ test("clicking a notification clears unread state and opens its space", async ()
 
   await worker.push({ space: "gaming" });
   assert.equal(worker.notifications.length, 2);
+});
+
+test("a visible different room does not suppress incoming notifications", async () => {
+  const worker = createServiceWorker();
+  worker.setVisible(true);
+  await worker.push({space:"other-room"});
+  assert.equal(worker.notifications.length,1);
+});
+
+test("bare URLs use each window's reported room, not the last room opened elsewhere", async () => {
+  const worker = createServiceWorker();
+  await worker.visit("gaming","one");
+  await worker.visit("other-room","two");
+  worker.setClients([{id:"one",url:"https://example.test/app/",visibilityState:"visible"}]);
+  await worker.push({space:"gaming"});
+  assert.equal(worker.notifications.length,0);
+  await worker.push({space:"other-room"});
+  assert.equal(worker.notifications.length,1);
+});
+
+test("a visible page outside the worker scope cannot suppress a notification", async () => {
+  const worker = createServiceWorker();
+  worker.setClients([{id:"one",url:"https://example.test/another-app/?space=gaming",visibilityState:"visible"}]);
+  await worker.push({space:"gaming"});
+  assert.equal(worker.notifications.length,1);
 });

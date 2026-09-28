@@ -672,8 +672,11 @@ function renderPoll(msgDiv, snapshotKey, data, color, timeString) {
 // SEND MESSAGE
 // Validates input, records history, checks for a command, then pushes to Firebase
 // ============================================================
+let messageSendPending = false;
 window.sendMessage = async () => {
-  const text = (chatInput && chatInput.value ? chatInput.value : "").trim();
+  if (messageSendPending) return;
+  const draft = chatInput?.value || "";
+  const text = draft.trim();
   if (!text || !window.chatRef) return;
 
   // Record in command history (capped at 50 entries)
@@ -689,10 +692,13 @@ window.sendMessage = async () => {
   }
 
   // Push regular message to Firebase Realtime Database
+  messageSendPending = true;
+  if (sendBtn) sendBtn.disabled = true;
   try {
     // Ensure push subscription from a chat user gesture (not only voice join).
     if (window.notificationManager && !window.notificationManager.hasEnsuredPushThisSession) {
-      await window.notificationManager.ensurePushSubscription(true);
+      // Optional notifications must never block chat delivery.
+      void window.notificationManager.ensurePushSubscription(true).catch(() => {});
     }
 
     await window.chatRef.push({
@@ -700,17 +706,22 @@ window.sendMessage = async () => {
       text:      text,
       color:     window.myColor || "#805ff5",
       ...getChatSenderMetadata(),
-      timestamp: Date.now(),
+      timestamp: firebase.database.ServerValue.TIMESTAMP,
     });
-    chatInput.value = "";
+    // The user may already be composing their next message.
+    if (chatInput.value === draft) chatInput.value = "";
     chatInput.focus();
 
     // Trigger a global push notification for firebase notification subscribers (e.g. mobile users who have left the tab)
     if (window.notificationManager) {
-    window.notificationManager.triggerGlobalPush(window.myDisplayName, text);
-  }
+      window.notificationManager.triggerGlobalPush(window.myDisplayName, text);
+    }
   } catch (err) {
     console.error("Greška pri slanju:", err);
+    window.appendMessage("Sistem", "Poruka nije poslata. Pokušaj ponovo.", "#ef4444");
+  } finally {
+    messageSendPending = false;
+    if (sendBtn) sendBtn.disabled = false;
   }
 };
 
@@ -833,7 +844,7 @@ function handleCommand(text) {
     case "/ping":
       if (window.client && typeof window.client.getRTCStats === "function") {
         const rtc = window.client.getRTCStats();
-        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${rtc.UserCount}`, "#fbbf24");
+        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${window.getVoiceParticipantCount()}`, "#fbbf24");
       }
       return true;
 
@@ -984,20 +995,23 @@ function startChat() {
       gameRef.transaction((game) => {
         // If there's no active game, or the guess is from the drawer, or it's incorrect, abort the transaction
         if (!game || !game.active) return;
+        // child_added replays history on every join. Only messages created
+        // during this round can be guesses (timestamps come from Firebase).
+        if (typeof game.startedAt !== "number" || typeof message.timestamp !== "number" ||
+            message.timestamp < game.startedAt ||
+            (game.endsAt && message.timestamp > game.endsAt)) return;
         const isDrawerGuess = game.drawerSessionId && message.senderSessionId
           ? String(message.senderSessionId) === String(game.drawerSessionId)
           : (message.username || "") === game.drawer;
         if (isDrawerGuess) return;
         if ((message.text || "").toLowerCase().trim() !== game.word.toLowerCase()) return;
-        // show to all users a confetti celebration for the correct guess
-        if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
-        // Re-enable the "Get Word" button for the next game
-        if (window.resetWordButton) window.resetWordButton();
         // update the game state to mark it as inactive (ended)
         return { ...game, active: false };
       }, (error, committed, snapshot) => {
         if (!committed) return;
         const game = snapshot.val();
+        if (window.launchWhiteboardConfetti) window.launchWhiteboardConfetti();
+        if (window.resetWordButton) window.resetWordButton();
         // Announce the winner in chat and clean up the game state
         window.chatRef.push({
           username:  "Sistem",
@@ -1005,7 +1019,8 @@ function startChat() {
           color:     "#fbbf24",
           timestamp: Date.now(),
         });
-        gameRef.remove();
+        // A new round can start while the winning transaction completes.
+        gameRef.transaction((current) => current?.roundId === game.roundId && !current.active ? null : undefined);
         clearInterval(window.timerInterval);
       });
     }
@@ -1039,8 +1054,7 @@ function startChat() {
       }
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
-      const avatar = document.getElementById(`avatar-${uid}`);
-      if (avatar) avatar.classList.toggle("muted", data.muted === true);
+      window.setUserMuted(uid, data.muted === true);
     });
 }
 
@@ -1056,6 +1070,7 @@ function startPresenceListener() {
       if (data.voiceJoined === false) return;
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
+      window.setUserMuted(uid, data.muted === true);
     });
 
   firebase.database()
@@ -1072,8 +1087,10 @@ function startPresenceListener() {
 // Uses a Firebase transaction to safely increment a vote counter
 // Prevents double-voting by recording the poll ID in localStorage
 // ============================================================
-window.vote = (pollId, option) => {
+const pendingVotes = new Set();
+window.vote = async (pollId, option) => {
   const votedKey = `voted_${pollId}`;
+  if (pendingVotes.has(votedKey)) return;
   if (localStorage.getItem(votedKey)) {
     window.appendMessage("Sistem", "Već si glasao u ovoj anketi.", "#ef4444");
     return;
@@ -1081,11 +1098,17 @@ window.vote = (pollId, option) => {
 
   const pollRef = window.chatRef.child(`${pollId}/votes/${getPollVoteKey(option)}`);
 
-  // Atomic increment — safe under concurrent updates
-  pollRef.transaction((currentVotes) => (currentVotes || 0) + 1);
-
-  // Mark as voted so the user can't vote again in this session
-  localStorage.setItem(votedKey, "true");
+  pendingVotes.add(votedKey);
+  try {
+    const result = await pollRef.transaction((currentVotes) => (currentVotes || 0) + 1);
+    if (!result.committed) throw new Error("Vote was not committed");
+    localStorage.setItem(votedKey, "true");
+  } catch (error) {
+    console.error("Vote failed:", error);
+    window.appendMessage("Sistem", "Glas nije sačuvan. Pokušaj ponovo.", "#ef4444");
+  } finally {
+    pendingVotes.delete(votedKey);
+  }
 };
 
 // ============================================================
