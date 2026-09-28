@@ -136,6 +136,8 @@ function initWhiteboard() {
     wordBtn.classList.toggle('is-disabled', true);
 
     gameRef.set({
+      roundId: gameRef.push().key,
+      startedAt: firebase.database.ServerValue.TIMESTAMP,
       word:   word,
       drawer: window.myDisplayName,
       drawerSessionId: String(window.myAgoraUID),

@@ -375,12 +375,14 @@ async function stopScreenShare() {
   if (session.capturePending) return;
   if (session.stopping) return session.stopping;
   session.stopping = (async () => {
-    await session.ready.catch(() => {});
-    // Close capture immediately, even if the network is unavailable.
+    // Install the shared stopping promise before close can fire track-ended.
+    await Promise.resolve();
+    // Release captured media before waiting on a possibly disconnected SDK.
     for (const track of [session.video, session.audio]) {
       track?.stop();
       track?.close();
     }
+    await session.ready.catch(() => {});
     await session.client?.leave().catch((error) => console.warn("Screen client leave failed:", error));
     window.setLocalScreenSharing?.(window.client.uid, false);
     screenSession = null;
@@ -597,7 +599,11 @@ window.client.on("volume-indicator", (volumes) => {
 // and posts system messages on disconnect/reconnect events.
 // Note: Agora automatically tries to reconnect, so we don't need to do anything here
 // except update the UI to keep the user informed. */
-window.client.on("connection-state-change", (curState, prevState) => {
+window.client.on("connection-state-change", async (curState, prevState) => {
+  if (curState === "DISCONNECTED" && window.isVoiceJoined && !isLeavingChannel &&
+      (prevState === "RECONNECTING" || prevState === "CONNECTED")) {
+    await leaveChannel("connection-lost");
+  }
   const s = document.getElementById("status");
   if (!s) return;
 
@@ -606,11 +612,9 @@ window.client.on("connection-state-change", (curState, prevState) => {
     s.style.color = "#fbbf24";
   }
 
-  if (curState === "DISCONNECTED" && prevState === "RECONNECTING") {
+  if (curState === "DISCONNECTED" && (prevState === "RECONNECTING" || prevState === "CONNECTED")) {
     s.innerText   = "Veza prekinuta";
     s.style.color = "#f87171";
-    if (window.appendMessage)
-      window.appendMessage("Sistem", "Veza je prekinuta.", "#f87171");
   }
 
   if (curState === "CONNECTED" && prevState === "RECONNECTING") {
@@ -743,14 +747,11 @@ async function leaveChannel(reason = "manual") {
 
     // --- 1. WAKE LOCK ---
     if (window.wakeLock) {
-      await window.wakeLock.release();
+      void window.wakeLock.release().catch((error) => console.warn("Wake lock release failed:", error));
       window.wakeLock = null;
     }
 
-    // --- 2. SCREEN SHARE ---
-    await stopScreenShare();
-
-    // --- 3. LOCAL AUDIO TRACK ---
+    // --- 2. LOCAL AUDIO TRACK ---
     stopLocalVolumeMonitor();
     if (localTracks.audioTrack) {
       localTracks.audioTrack.stop();
@@ -758,13 +759,19 @@ async function leaveChannel(reason = "manual") {
       localTracks.audioTrack = null;
     }
 
+    // --- 3. SCREEN SHARE ---
+    const screenCleanup = stopScreenShare();
+    if (reason === "connection-lost") void screenCleanup.catch((error) => console.warn("Screen cleanup failed:", error));
+    else await screenCleanup;
+
     // --- 4. AGORA CLIENT and PRESENCE ---
-    await window.client.leave();
-    try {
-      await window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: false });
-    } catch (presenceError) {
+    const voiceCleanup = window.client.leave().catch((error) => console.warn("Voice client leave failed:", error));
+    if (reason !== "connection-lost") await voiceCleanup;
+    // Firebase writes can wait indefinitely while offline. Local microphone
+    // and UI cleanup must not wait for the presence transaction to reconnect.
+    void window.claimPresenceIdentity(window.myAgoraUID, { voiceJoined: false }).catch((presenceError) => {
       console.error("Chat identity could not be preserved after leaving voice:", presenceError);
-    }
+    });
 
     // --- 5. RESET LOCAL STATE ---
     isMuted = false;
@@ -808,7 +815,7 @@ async function leaveChannel(reason = "manual") {
     if (window.appendMessage) {
       const leaveMessage = reason === "afk"
         ? AFK_MESSAGES.disconnected
-        : "Izašao si iz kanala.";
+        : reason === "connection-lost" ? "Veza je prekinuta. Možeš ponovo da se povežeš." : "Izašao si iz kanala.";
       window.appendMessage("Sistem", leaveMessage, "#fbbf24");
     }
   } finally {
