@@ -551,9 +551,44 @@ body {
 
 /* Expand slider when card is in active state */
 .user-card.active .volume-controls {
-  height: 30px;
+  height: 52px;
   margin-top: 8px;
   opacity: 1;
+}
+
+.volume-row {
+  display: flex;
+  flex-direction: column;
+  width: 90%;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+
+.volume-row[hidden] {
+  display: none;
+}
+
+.volume-caption {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.volume-row .volume-slider {
+  width: 100%;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.volume-slider:focus-visible {
+  outline: 2px solid #4ade80;
+  outline-offset: 3px;
+}
+
+.volume-slider:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .volume-slider {
@@ -601,6 +636,58 @@ body {
   object-fit: cover !important;
 }
 
+.sharing-badge {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  padding: 5px 10px;
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  border-radius: 20px;
+  background: #12352d;
+  color: #a7f3d0;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.screen-media {
+  width: 100%;
+  height: 100%;
+}
+
+.screen-player-controls {
+  position: absolute;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 20;
+  box-sizing: border-box;
+  width: min(280px, calc(100% - 48px));
+  padding: 18px 20px;
+  background: rgba(17, 24, 39, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px #0008;
+  transform: translateY(calc(100% + 32px));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 180ms ease, opacity 180ms ease;
+  cursor: default;
+}
+.screen-player-controls[hidden] { display: none; }
+.screen-player-controls.visible,
+.screen-player-controls:has(:focus-visible) {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.screen-player-controls .volume-row { width: 100%; padding: 0; gap: 16px; }
+.screen-player-controls .volume-caption { font-size: 14px; }
+.screen-player-controls .volume-slider { cursor: pointer; }
+.screen-player-controls .volume-slider:disabled { cursor: not-allowed; }
+.video-container:focus-visible { outline: 2px solid #4ade80; outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .screen-player-controls { transition: none; }
+}
+
 /*=============================================================
    HIDE DEFAULT VIDEO CONTROLS
    Keeps the video interactive for click-to-toggle and right-click menu
@@ -641,6 +728,8 @@ body {
    Removes border-radius and switches to contain when fullscreen
    ============================================================ */
 .video-container:fullscreen {
+  width: 100vw;
+  height: 100vh;
   border-radius: 0 !important;
   background: #000 !important;
 }

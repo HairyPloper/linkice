@@ -373,18 +373,24 @@ window.audioSettings = audioSettings;
 // devices and saves the user's choice in localStorage.
 // Note: Browsers require a media permission to access device labels, so we only load the speakers after the user clicks "Join Call" and grants permission.
 // ============================================================
-const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
-
-if (!isMobile) {
-  document.getElementById("join-btn").addEventListener("click", async () => {
-    await loadSpeakers();
-  });
-}
+window.supportsSpeakerSelection = () =>
+  !/iPhone|iPad|Android|Firefox|FxiOS/i.test(navigator.userAgent) &&
+  /Chrome\/|Chromium\/|Edg\//.test(navigator.userAgent) &&
+  typeof HTMLMediaElement !== "undefined" &&
+  typeof HTMLMediaElement.prototype.setSinkId === "function";
 
 async function loadSpeakers() {
-  // Browser requires a media permission before listing devices with labels
-  // Joining the call grants that permission, so we call this after join click
-  const devices = await AgoraRTC.getPlaybackDevices();
+  // Run after successful join, not concurrently with microphone acquisition.
+  // Agora does not support output switching on Firefox or Safari.
+  if (!window.supportsSpeakerSelection()) return;
+  let devices;
+  try {
+    devices = await AgoraRTC.getPlaybackDevices(true);
+  } catch (error) {
+    console.warn("Speaker enumeration unavailable:", error);
+    return;
+  }
+  if (!window.isVoiceJoined) return;
   if (!devices.length) return;
 
   const select = document.getElementById("speaker-select");
@@ -401,13 +407,13 @@ async function loadSpeakers() {
 
   // Restore saved selection
   const saved = localStorage.getItem("speaker-device");
-  if (saved) select.value = saved;
+  if (saved && devices.some((device) => device.deviceId === saved)) select.value = saved;
 
   select.onchange = (e) => {
     const deviceId = e.target.value;
     localStorage.setItem("speaker-device", deviceId);
     window.client.remoteUsers.forEach(user => {
-      if (user.audioTrack) user.audioTrack.setPlaybackDevice(deviceId);
+      if (user.audioTrack) void window.setRemotePlaybackDevice(user.audioTrack, deviceId);
     });
   };
 
@@ -645,6 +651,7 @@ window.drawUser = (uid, username, icon, isMe = false) => {
       avatarEl.textContent = icon;
       avatarEl.classList.toggle("paired-icon", !window.animals.includes(icon));
     }
+    window.syncScreenShareCard?.(uid);
     return;
   }
 
@@ -690,58 +697,235 @@ window.drawUser = (uid, username, icon, isMe = false) => {
     // Stop clicks on the slider from bubbling up and toggling the card's active state
     vc.addEventListener("click", (e) => e.stopPropagation());
 
-    const input = document.createElement("input");
-    input.type      = "range";
-    input.className = "volume-slider";
-    input.min   = 0;
-    input.max   = 100;
-    input.value = 100; // Default: full volume
-    input.addEventListener("input", function () {
-      window.adjustVolume(uid, this.value);
-    });
-
-    vc.appendChild(input);
+    const addSlider = (kind, title, adjust) => {
+      const row = document.createElement("label");
+      row.className = `volume-row ${kind}-volume-row`;
+      const caption = document.createElement("span");
+      caption.className = "volume-caption";
+      const text = document.createElement("span");
+      text.textContent = kind === "voice" ? "" : title;
+      const value = document.createElement("output");
+      const input = document.createElement("input");
+      input.type = "range";
+      input.className = "volume-slider";
+      input.min = 0;
+      input.max = 100;
+      input.value = window.getRemoteVolume?.(uid, kind) ?? (kind === "screen" ? 18 : 100);
+      input.setAttribute("aria-label", `${title}: ${username}`);
+      value.textContent = `${input.value}%`;
+      input.addEventListener("input", () => {
+        value.textContent = `${input.value}%`;
+        adjust(uid, input.value);
+      });
+      caption.append(text, value);
+      row.append(caption, input);
+      row.hidden = kind === "screen";
+      vc.appendChild(row);
+    };
+    addSlider("voice", "Glas", (id, value) => window.adjustVolume(id, value));
     card.appendChild(vc);
   }
 
   grid.appendChild(card);
+  window.syncScreenShareCard?.(uid);
 };
 
-// ============================================================
-// VIDEO OVERLAY — SHOW
-// Hides the emoji avatar and renders a live video track inside the card.
-// Also wires up a click-to-fullscreen gesture on the video wrapper.
-// ============================================================
+window.setScreenAudioAvailable = (uid, available, sharing = available) => {
+  const card = document.getElementById(`user-${uid}`);
+  if (!card) return;
+  const row = card.querySelector(".screen-volume-row");
+  if (row) {
+    const input = row.querySelector("input");
+    input.disabled = !available;
+    row.querySelector("output").textContent = available ? `${input.value}%` : "Bez zvuka";
+    row.title = available ? "" : "Zvuk ekrana nije primljen. Osoba koja deli ekran treba da uključi deljenje zvuka.";
+  }
+  card.classList.toggle("has-screen-audio", available);
+  card.classList.toggle("has-screen-share", sharing);
+};
+
+window.setLocalScreenSharing = (uid, sharing) => {
+  const card = document.getElementById(`user-${uid}`);
+  if (!card) return;
+  let badge = card.querySelector(".sharing-badge");
+  if (sharing && !badge) {
+    badge = document.createElement("div");
+    badge.className = "sharing-badge";
+    badge.textContent = "🖥 Deliš ekran";
+    badge.setAttribute("role", "status");
+    card.prepend(badge);
+  }
+  if (!sharing) badge?.remove();
+};
+
+window.setUserMuted = (uid, muted) => {
+  const avatar = document.getElementById(`avatar-${uid}`);
+  if (!avatar) return;
+  avatar.classList.toggle("muted", muted);
+  if (muted) window.clearSpeakingIndicator?.(uid);
+};
+
+// Each remote preview owns a fullscreen panel. Audio follows the real
+// fullscreen element, never the click or the requestFullscreen promise.
+const screenViews = new Map();
+const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+
+function revealScreenControls(view) {
+  if (fullscreenElement() !== view.wrapper) return;
+  clearTimeout(view.hideTimer);
+  view.panel.classList.add("visible");
+  view.hideTimer = setTimeout(() => {
+    if (!view.dragging && !view.panel.querySelector(":focus-visible")) {
+      view.panel.classList.remove("visible");
+    }
+  }, 1000);
+}
+
+function syncFullscreenScreen() {
+  let watching = null;
+  for (const [uid, view] of screenViews) {
+    const active = fullscreenElement() === view.wrapper;
+    view.panel.hidden = !active;
+    view.wrapper.setAttribute("aria-label", active ? "Zatvori deljeni ekran" : "Otvori deljeni ekran");
+    if (active) {
+      watching = uid;
+      revealScreenControls(view);
+    } else {
+      clearTimeout(view.hideTimer);
+      view.panel.classList.remove("visible");
+      view.dragging = false;
+    }
+  }
+  window.setWatchedScreen?.(watching);
+}
+document.addEventListener("fullscreenchange", syncFullscreenScreen);
+document.addEventListener("webkitfullscreenchange", syncFullscreenScreen);
+for (const event of ["pointerup", "pointercancel"]) {
+  document.addEventListener(event, () => {
+    for (const view of screenViews.values()) {
+      if (view.dragging) {
+        view.dragging = false;
+        revealScreenControls(view);
+      }
+    }
+  });
+}
+
 window.playVideoInCard = (uid, track) => {
+  // Never replace the sharer's own avatar or play their screen locally.
+  if (String(uid) === String(window.client?.uid)) {
+    window.setLocalScreenSharing(uid, true);
+    return;
+  }
   const container = document.querySelector(`#user-${uid} .avatar-container`);
   if (!container) return;
-
-  // Hide the emoji so the video fills the same space
+  const key = String(uid);
+  let view = screenViews.get(key);
+  if (view && view.wrapper.parentNode !== container) {
+    window.removeVideoFromCard(uid);
+    view = null;
+  }
   container.querySelector(".avatar").style.display = "none";
+  if (!view) {
+    const wrapper = document.createElement("div");
+    wrapper.id = `video-wrapper-${uid}`;
+    wrapper.className = "video-container";
+    wrapper.tabIndex = 0;
+    wrapper.setAttribute("role", "button");
+    wrapper.setAttribute("aria-label", "Otvori deljeni ekran");
+    wrapper.title = "Klikni za ceo ekran i zvuk";
+    const media = document.createElement("div");
+    media.id = `screen-media-${uid}`;
+    media.className = "screen-media";
+    const panel = document.createElement("div");
+    panel.className = "screen-player-controls";
+    panel.hidden = true;
+    const row = document.createElement("label");
+    row.className = "volume-row screen-volume-row";
+    const caption = document.createElement("span");
+    caption.className = "volume-caption";
+    const title = document.createElement("span");
+    title.textContent = "Jačina";
+    const output = document.createElement("output");
+    const input = document.createElement("input");
+    input.type = "range";
+    input.className = "volume-slider";
+    input.min = 0;
+    input.max = 100;
+    input.value = window.getRemoteVolume?.(uid, "screen") ?? 18;
+    input.setAttribute("aria-label", "Jačina");
+    input.disabled = true;
+    output.textContent = "Bez zvuka";
+    caption.append(title, output);
+    row.append(caption, input);
+    panel.append(row);
+    wrapper.append(media, panel);
+    container.append(wrapper);
+    view = { wrapper, media, panel, track: null, hideTimer: null, dragging: false };
+    screenViews.set(key, view);
 
-  // Reuse an existing wrapper div if one already exists (e.g. screen share restart)
-  let videoDiv = document.getElementById(`video-wrapper-${uid}`) || document.createElement("div");
-  videoDiv.id        = `video-wrapper-${uid}`;
-  videoDiv.className = "video-container";
-
-  // Click toggles fullscreen for the video
-  videoDiv.onclick = (e) => {
-    e.stopPropagation(); // Don't trigger the card's mute/active toggle
-    if (!document.fullscreenElement) videoDiv.requestFullscreen?.();
-    else document.exitFullscreen?.();
-  };
-
-  container.appendChild(videoDiv);
-  track.play(videoDiv.id); // Agora renders the track into the div by its ID
+    const toggleFullscreen = async () => {
+      try {
+        if (fullscreenElement() === wrapper) {
+          const exit = document.exitFullscreen || document.webkitExitFullscreen;
+          await exit?.call(document);
+        } else {
+          const request = wrapper.requestFullscreen || wrapper.webkitRequestFullscreen;
+          if (!request) throw new Error("Fullscreen is not supported");
+          await request.call(wrapper);
+        }
+      } catch (error) {
+        console.warn("Fullscreen unavailable:", error);
+        window.appendMessage?.("Sistem", "Pregledač nije dozvolio ceo ekran. Klikni ponovo na deljeni ekran.", "#fbbf24");
+      }
+    };
+    wrapper.onclick = (event) => {
+      event.stopPropagation();
+      // A touch near the bottom reveals controls without closing the stream.
+      if (fullscreenElement() === wrapper && event.clientY >= wrapper.getBoundingClientRect().bottom - 120) {
+        revealScreenControls(view);
+        return;
+      }
+      return toggleFullscreen();
+    };
+    wrapper.addEventListener("keydown", (event) => {
+      if (event.target === wrapper && ["Enter", " "].includes(event.key)) {
+        event.preventDefault();
+        event.stopPropagation();
+        void toggleFullscreen();
+      }
+    });
+    wrapper.addEventListener("pointermove", (event) => {
+      if (event.clientY >= wrapper.getBoundingClientRect().bottom - 120) revealScreenControls(view);
+    });
+    panel.addEventListener("click", (event) => event.stopPropagation());
+    panel.addEventListener("pointerdown", () => {
+      view.dragging = true;
+      revealScreenControls(view);
+    });
+    panel.addEventListener("focusin", () => revealScreenControls(view));
+    panel.addEventListener("focusout", () => revealScreenControls(view));
+    input.addEventListener("input", () => {
+      output.textContent = `${input.value}%`;
+      window.adjustScreenVolume(uid, input.value);
+      revealScreenControls(view);
+    });
+  }
+  // Presence updates and audio arrivals must not restart a playing video.
+  if (view.track !== track) {
+    view.track = track;
+    track.play(view.media.id);
+  }
 };
 
-// ============================================================
-// VIDEO OVERLAY — HIDE
-// Removes the video wrapper and restores the emoji avatar
-// ============================================================
 window.removeVideoFromCard = (uid) => {
-  document.getElementById(`video-wrapper-${uid}`)?.remove();
-  
+  const view = screenViews.get(String(uid));
+  if (view) {
+    clearTimeout(view.hideTimer);
+    screenViews.delete(String(uid));
+    view.wrapper.remove();
+    syncFullscreenScreen();
+  }
   const avatar = document.querySelector(`#user-${uid} .avatar`);
   if (avatar) avatar.style.display = "flex";
 };
@@ -768,22 +952,45 @@ let localTracks = { audioTrack: null };
 // Tracks whether the local mic is currently muted
 let isMuted = false;
 
-// Screen share tracks (video + optional system audio)
-let screenTrack      = null;
-let screenAudioTrack = null;
-let screenAudioCaptureTrack = null;
-let screenAudioContext = null;
+// A second publisher keeps screen audio separate from the microphone stream.
+let screenSession = null;
+const SCREEN_UID_OFFSET = 1000000000;
+const DEFAULT_SCREEN_VOLUME = 18;
+const remoteScreenVolumes = new Map();
+const remoteScreenTracks = new Map();
+const remoteMediaSubscriptions = new Map();
+const remoteScreenErrors = new Map();
+let watchedScreenUid = null;
 
-// System audio is usually much louder than a processed microphone. Reduce it
-// before Agora mixes both tracks into the remote user's single audio stream.
-const SCREEN_SHARE_AUDIO_GAIN = 0.18;
+// Keep subscribed previews silent. Only the fullscreen viewer opens this gate.
+window.setWatchedScreen = (uid) => {
+  watchedScreenUid = uid == null ? null : String(uid);
+  for (const [owner, tracks] of remoteScreenTracks) {
+    tracks.audio?.setVolume(owner === watchedScreenUid
+      ? (remoteScreenVolumes.get(owner) ?? DEFAULT_SCREEN_VOLUME) : 0);
+  }
+};
+
+// Participant IDs are six-digit numbers. Reserve a disjoint numeric range for
+// their screen publishers, keeping Agora's UID type consistent across clients.
+window.isScreenShareUid = (uid) => {
+  const owner = Number(uid) - SCREEN_UID_OFFSET;
+  return Number.isInteger(owner) && owner >= 100000 && owner <= 999999;
+};
+const screenOwnerUid = (uid) => Number(uid) - SCREEN_UID_OFFSET;
+window.getVoiceParticipantCount = () => window.isVoiceJoined
+  ? 1 + window.client.remoteUsers.filter((user) => !window.isScreenShareUid(user.uid)).length
+  : 0;
 
 // Keep the UI volume stable when Agora republishes/replaces a remote track.
 const remoteVolumes = new Map();
 
-const LOCAL_TRACK_SPEAKING_THRESHOLD = 0.08;
+// Agora 4.24 uses a normalized logarithmic level, not the old weighted FFT
+// level. Its documented speech thresholds are 0.6 locally and 60 remotely.
+// Keeping the old 0.08/8 thresholds would classify faint noise as speech.
+const LOCAL_TRACK_SPEAKING_THRESHOLD = 0.6;
 const LOCAL_VOLUME_POLL_MS = 250;
-const REMOTE_SPEAKING_THRESHOLD = 8;
+const REMOTE_SPEAKING_THRESHOLD = 60;
 let localVolumeMonitor = null;
 
 // ============================================================
@@ -814,7 +1021,9 @@ let afkDisconnectTimer = null;
 let lastAfkActivityAt = Date.now();
 
 function isSoloInVoiceChannel() {
-  return (window.client?.remoteUsers?.length || 0) === 0;
+  return !(window.client?.remoteUsers || []).some(
+    (user) => !window.isScreenShareUid?.(user.uid),
+  );
 }
 
 function clearAfkTimers() {
@@ -876,7 +1085,7 @@ function startAfkTimer() {
 
 function syncAfkTimerWithOccupancy({ remoteJoined = false, leavingUid = null } = {}) {
   const remainingRemoteUsers = (window.client?.remoteUsers || []).filter(
-    (user) => String(user.uid) !== String(leavingUid),
+    (user) => String(user.uid) !== String(leavingUid) && !window.isScreenShareUid?.(user.uid),
   );
 
   // Event ordering differs between Agora SDK releases, so use the event itself
@@ -955,6 +1164,7 @@ async function resolveRemoteName(uid) {
 }
 
 function stopLocalVolumeMonitor() {
+  document.getElementById(`avatar-${window.client.uid}`)?.classList.remove("speaking");
   if (!localVolumeMonitor) return;
   localVolumeMonitor.active = false;
   if (localVolumeMonitor.intervalId) {
@@ -963,7 +1173,6 @@ function stopLocalVolumeMonitor() {
   if (localVolumeMonitor.silenceTimer) {
     clearTimeout(localVolumeMonitor.silenceTimer);
   }
-  document.getElementById(`avatar-${window.client.uid}`)?.classList.remove("speaking");
   localVolumeMonitor = null;
 }
 
@@ -984,14 +1193,24 @@ function startLocalVolumeMonitor(localAudioTrack) {
     // suspend Web Audio contexts in quiet/background tabs even while the
     // microphone track is still being published, which made real speech look
     // like AFK silence after the warning had appeared.
-    const level = Number(localAudioTrack.getVolumeLevel?.()) || 0;
-    const isSpeaking = !isMuted && level > LOCAL_TRACK_SPEAKING_THRESHOLD;
+    const mediaTrack = localAudioTrack.getMediaStreamTrack?.();
+    const inputMuted = isMuted || localAudioTrack.enabled === false ||
+      localAudioTrack.muted === true || mediaTrack?.muted === true ||
+      mediaTrack?.enabled === false || mediaTrack?.readyState === "ended";
+    const level = inputMuted ? 0 : (Number(localAudioTrack.getVolumeLevel?.()) || 0);
+    const isSpeaking = !inputMuted && level > LOCAL_TRACK_SPEAKING_THRESHOLD;
     if (isSpeaking) markAfkActivity();
 
     const avatar = document.getElementById(`avatar-${window.client.uid}`);
     if (!avatar) return;
 
-    if (isSpeaking) {
+    if (inputMuted) {
+      // Hardware/browser mute can leave a stale nonzero SDK meter reading.
+      avatar.classList.remove("speaking");
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = null;
+      monitor.silenceTimer = null;
+    } else if (isSpeaking) {
       avatar.classList.add("speaking");
       if (silenceTimer) {
         clearTimeout(silenceTimer);
@@ -1021,162 +1240,184 @@ function startLocalVolumeMonitor(localAudioTrack) {
 // ============================================================
 const screenBtn = document.getElementById("screen-btn");
 
-/**
- * Routes captured system audio through Web Audio so its outgoing level can be
- * reduced. LocalAudioTrack.setVolume only changes local playback, so a custom
- * track is required to change what remote listeners receive.
- */
-async function createAttenuatedScreenAudioTrack(capturedTrack) {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass || !AgoraRTC.createCustomAudioTrack) return capturedTrack;
+// Serialize start/stop so leaving while the capture picker is open cannot
+// strand a publisher or continue sharing after the voice connection is closed.
+if (screenBtn) screenBtn.onclick = async () => {
+  if (screenSession) {
+    await stopScreenShare();
+    return;
+  }
+  if (!window.isVoiceJoined) return;
+
+  const session = { client: null, video: null, audio: null, cancelled: false, capturePending: true };
+  screenSession = session;
+  screenBtn.disabled = true;
+  session.ready = (async () => {
+    let result;
+    try {
+      result = await AgoraRTC.createScreenVideoTrack({
+        encoderConfig: { width: 1920, height: 1080, frameRate: 30, bitrateMax: 4780 },
+        optimizationMode: "motion",
+      }, "auto");
+    } finally {
+      session.capturePending = false;
+    }
+    [session.video, session.audio] = Array.isArray(result) ? result : [result, null];
+    session.video.on("track-ended", () => { void stopScreenShare(); });
+    if (session.cancelled || !window.isVoiceJoined) return;
+
+    // This client only publishes. Never subscribe here, or listeners hear
+    // duplicate playback. The primary client also skips its own screen UID.
+    session.client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+    await session.client.join(
+      window.APP_ID, window.CHANNEL, null, SCREEN_UID_OFFSET + Number(window.client.uid),
+    );
+    if (session.cancelled || !window.isVoiceJoined) return;
+    await session.client.publish(
+      session.audio ? [session.video, session.audio] : session.video,
+    );
+    if (session.cancelled || !window.isVoiceJoined) return;
+    screenBtn.innerHTML = "<span>🖥️</span> Prekini";
+    screenBtn.classList.add("active");
+    session.published = true;
+    window.setLocalScreenSharing?.(window.client.uid, true);
+    if (!session.audio) {
+      window.appendMessage?.("Sistem", "Ekran se deli bez zvuka. Za zvuk ponovo pokreni deljenje i uključi opciju „Share audio” ako je pregledač nudi.", "#fbbf24");
+    }
+  })();
 
   try {
-    screenAudioContext = new AudioContextClass();
-    await screenAudioContext.resume();
-
-    const inputStream = new MediaStream([capturedTrack.getMediaStreamTrack()]);
-    const source = screenAudioContext.createMediaStreamSource(inputStream);
-    const gain = screenAudioContext.createGain();
-    const destination = screenAudioContext.createMediaStreamDestination();
-
-    gain.gain.value = SCREEN_SHARE_AUDIO_GAIN;
-    source.connect(gain).connect(destination);
-
-    screenAudioCaptureTrack = capturedTrack;
-    return AgoraRTC.createCustomAudioTrack({
-      mediaStreamTrack: destination.stream.getAudioTracks()[0],
-    });
+    await session.ready;
+    if (session.cancelled || !window.isVoiceJoined) await stopScreenShare();
   } catch (error) {
-    console.warn("Screen audio attenuation unavailable; using captured audio directly.", error);
-    screenAudioContext?.close?.().catch(() => {});
-    screenAudioContext = null;
-    screenAudioCaptureTrack = null;
-    return capturedTrack;
-  }
-}
-
-if (screenBtn) screenBtn.onclick = async () => {
-  if (!screenTrack) {
-    // --- Start screen share ---
-    try {
-      const result = await AgoraRTC.createScreenVideoTrack(
-        {
-          encoderConfig: {
-            width: 1920, height: 1080,
-            frameRate: 30, bitrateMax: 4780,
-          },
-          optimizationMode: "motion", // Prioritise smoothness over sharpness
-        },
-        "auto" // Capture system audio if the browser/OS supports it
-      );
-
-      // createScreenVideoTrack returns an array when audio is captured,
-      // or a single track when only video is available
-      if (Array.isArray(result)) {
-        screenTrack      = result[0];
-        screenAudioTrack = await createAttenuatedScreenAudioTrack(result[1]);
-      } else {
-        screenTrack      = result;
-        screenAudioTrack = null;
-      }
-
-      // Publish whichever tracks we have
-      await window.client.publish(
-        screenAudioTrack ? [screenTrack, screenAudioTrack] : screenTrack
-      );
-
-      // Update button label to indicate an active share
-      if (screenBtn) {
-        screenBtn.innerHTML = "<span>🖥️</span> Prekini";
-        screenBtn.classList.add("active");
-      }
-
-      // Show the screen feed inside the local user's avatar card
-      window.playVideoInCard(window.client.uid, screenTrack);
-
-      // Stop sharing automatically if the user ends it via the browser UI
-      screenTrack.on("track-ended", stopScreenShare);
-
-    } catch (e) {
-      console.error(e);
-      await stopScreenShare();
-    }
-  } else {
-    // --- Stop screen share ---
-    stopScreenShare();
+    console.error("Screen sharing failed:", error);
+    await stopScreenShare();
+  } finally {
+    screenBtn.disabled = false;
   }
 };
 
-/** Unpublishes and cleans up all screen share tracks */
 async function stopScreenShare() {
-  if (screenTrack) {
-    const track = screenTrack;
-    screenTrack = null;
-    await window.client.unpublish(track).catch(() => {});
-    track.stop();
-    track.close();
-  }
-
-  if (screenAudioTrack) {
-    const track = screenAudioTrack;
-    screenAudioTrack = null;
-    await window.client.unpublish(track).catch(() => {});
-    track.stop();
-    track.close();
-  }
-
-  // When attenuation is active, the browser capture track feeds the custom
-  // published track and must be released separately.
-  if (screenAudioCaptureTrack) {
-    screenAudioCaptureTrack.stop();
-    screenAudioCaptureTrack.close();
-    screenAudioCaptureTrack = null;
-  }
-
-  if (screenAudioContext) {
-    await screenAudioContext.close().catch(() => {});
-    screenAudioContext = null;
-  }
-
-  // Restore button to its default state
-  if (screenBtn) {
-    screenBtn.innerHTML = "<span>🖥️</span> Podeli ekran";
-    screenBtn.classList.remove("active");
-  }
-
-  // Remove the video overlay from the local user's card
-  window.removeVideoFromCard(window.client.uid);
+  const session = screenSession;
+  if (!session) return;
+  session.cancelled = true;
+  // A browser capture picker cannot be cancelled programmatically. Let voice
+  // leave immediately; the pending start closes any later capture result.
+  if (session.capturePending) return;
+  if (session.stopping) return session.stopping;
+  session.stopping = (async () => {
+    await session.ready.catch(() => {});
+    // Close capture immediately, even if the network is unavailable.
+    for (const track of [session.video, session.audio]) {
+      track?.stop();
+      track?.close();
+    }
+    await session.client?.leave().catch((error) => console.warn("Screen client leave failed:", error));
+    window.setLocalScreenSharing?.(window.client.uid, false);
+    screenSession = null;
+    if (screenBtn) {
+      screenBtn.innerHTML = "<span>🖥️</span> Podeli ekran";
+      screenBtn.classList.remove("active");
+    }
+  })();
+  return session.stopping;
 }
+
+// Presence can render the card after media arrives. Reapply the cached tracks
+// and controls whenever the card is created or updated.
+window.syncScreenShareCard = (uid) => {
+  if (String(uid) === String(window.client.uid)) {
+    window.setLocalScreenSharing?.(uid, !!screenSession?.published && !screenSession.cancelled);
+    return;
+  }
+  const tracks = remoteScreenTracks.get(String(uid));
+  if (tracks?.video) window.playVideoInCard(uid, tracks.video);
+  window.setScreenAudioAvailable?.(uid, !!tracks?.audio, !!(tracks?.video || tracks?.audio));
+};
 
 // ============================================================
 // AGORA EVENT LISTENERS
 // ============================================================
 
+window.setRemotePlaybackDevice = async (track, deviceId) => {
+  if (window.supportsSpeakerSelection?.() === false) return;
+  try {
+    await track.setPlaybackDevice(deviceId);
+  } catch (error) {
+    console.warn("Speaker selection failed:", error);
+  }
+};
+
 /**
  * Fired when a remote user publishes an audio or video track.
- * Subscribe immediately, then resolve the real display name from Firebase
- * before rendering the card — this avoids showing a raw numeric UID.
+ * Subscribe through the primary client and route screen media to its owner's
+ * card. Firebase presence remains responsible for creating participant cards.
  */
 window.client.on("user-published", async (user, mediaType) => {
-  await window.client.subscribe(user, mediaType);
+  if (mediaType !== "audio" && mediaType !== "video") return;
+  const isScreen = window.isScreenShareUid(user.uid);
+  const ownerUid = isScreen ? screenOwnerUid(user.uid) : user.uid;
+  if (isScreen && String(ownerUid) === String(window.client.uid)) return;
+  const key = `${user.uid}:${mediaType}`;
+  const subscription = {};
+  remoteMediaSubscriptions.set(key, subscription);
+  const isCurrent = () => remoteMediaSubscriptions.get(key) === subscription;
+  try {
+    const subscribedTrack = await window.client.subscribe(user, mediaType);
+    // Match Agora users by UID, not JavaScript object identity. Invalidate the
+    // request on unpublish/leave so delayed results cannot revive old media.
+    const currentUser = window.client.remoteUsers.find((remote) => String(remote.uid) === String(user.uid));
+    if (!isCurrent() || !currentUser) return;
+    const track = subscribedTrack || (mediaType === "audio" ? currentUser.audioTrack : currentUser.videoTrack);
+    if (!track) throw new Error(`No ${mediaType} track returned after subscribing`);
 
-  if (mediaType === "audio") {
-    user.audioTrack.play();
-    user.audioTrack.setVolume(remoteVolumes.get(String(user.uid)) ?? 100);
-  }
-
-  if (mediaType === "video") {
-    window.playVideoInCard(user.uid, user.videoTrack);
+    if (isScreen) {
+      remoteScreenErrors.delete(key);
+      const tracks = remoteScreenTracks.get(String(ownerUid)) || {};
+      tracks[mediaType] = track;
+      remoteScreenTracks.set(String(ownerUid), tracks);
+      // Show available controls before playback or speaker selection, neither
+      // of which should prevent a successfully received stream reaching the UI.
+      window.syncScreenShareCard(ownerUid);
+    }
+    if (mediaType === "audio") {
+      const volume = isScreen
+        ? (watchedScreenUid === String(ownerUid) ? (remoteScreenVolumes.get(String(ownerUid)) ?? DEFAULT_SCREEN_VOLUME) : 0)
+        : (remoteVolumes.get(String(ownerUid)) ?? 100);
+      track.setVolume(volume);
+      const device = localStorage.getItem("speaker-device");
+      if (device && track.setPlaybackDevice) {
+        // Firefox does not support selecting an output device in Agora. A
+        // rejected device change must not interrupt playback or screen UI.
+        void window.setRemotePlaybackDevice(track, device);
+      }
+      track.play();
+    } else if (!isScreen) {
+      window.playVideoInCard(ownerUid, track);
+    }
+  } catch (error) {
+    if (!isCurrent()) return;
+    const detail = String(error?.code || error?.message || error);
+    if (isScreen) remoteScreenErrors.set(key, detail);
+    console.error(`Could not receive ${isScreen ? "screen " : ""}${mediaType} from ${user.uid}:`, error);
   }
 });
 
-/** Fired when a remote user unpublishes an audio or video track.
- *  We remove video share screen wrapper after user stops sharing
- */
 window.client.on("user-unpublished", (user, mediaType) => {
-  if (mediaType === "video") {
-    window.removeVideoFromCard(user.uid);
+  remoteMediaSubscriptions.delete(`${user.uid}:${mediaType}`);
+  remoteScreenErrors.delete(`${user.uid}:${mediaType}`);
+  const isScreen = window.isScreenShareUid(user.uid);
+  const ownerUid = isScreen ? screenOwnerUid(user.uid) : user.uid;
+  if (isScreen && String(ownerUid) === String(window.client.uid)) return;
+  if (isScreen) {
+    if (mediaType === "video" && watchedScreenUid === String(ownerUid)) window.setWatchedScreen(null);
+    const tracks = remoteScreenTracks.get(String(ownerUid));
+    tracks?.[mediaType]?.stop();
+    if (tracks) delete tracks[mediaType];
+    window.syncScreenShareCard(ownerUid);
   }
+  if (!isScreen && mediaType === "audio") window.clearSpeakingIndicator(ownerUid);
+  if (mediaType === "video") window.removeVideoFromCard(ownerUid);
 });
 
 /**
@@ -1185,9 +1426,27 @@ window.client.on("user-unpublished", (user, mediaType) => {
  * removal so a temporary Agora disconnect cannot hide a still-present user.
  */
 window.client.on("user-left", (user) => {
+  for (const mediaType of ["audio", "video"]) {
+    remoteMediaSubscriptions.delete(`${user.uid}:${mediaType}`);
+    remoteScreenErrors.delete(`${user.uid}:${mediaType}`);
+  }
+  if (window.isScreenShareUid(user.uid)) {
+    const ownerUid = screenOwnerUid(user.uid);
+    if (String(ownerUid) === String(window.client.uid)) return;
+    if (watchedScreenUid === String(ownerUid)) window.setWatchedScreen(null);
+    const tracks = remoteScreenTracks.get(String(ownerUid));
+    tracks?.audio?.stop();
+    tracks?.video?.stop();
+    remoteScreenTracks.delete(String(ownerUid));
+    window.removeVideoFromCard(ownerUid);
+    window.syncScreenShareCard(ownerUid);
+    return;
+  }
+  window.clearSpeakingIndicator(user.uid);
   const displayName = window.getDisplayName(user.uid);
   delete window.uidNameMap[user.uid];
   remoteVolumes.delete(String(user.uid));
+  remoteScreenVolumes.delete(String(user.uid));
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
@@ -1202,6 +1461,7 @@ window.client.on("user-left", (user) => {
  * and plays a higher tone to signal arrival.
  */
 window.client.on("user-joined", async (user) => {
+  if (window.isScreenShareUid?.(user.uid)) return;
   const identity = await resolveRemoteName(user.uid);
   if (!identity) return;
 
@@ -1222,11 +1482,29 @@ window.client.on("user-joined", async (user) => {
 const speakingTimers = new Map();
 const SPEAKING_LINGER_MS = 400;
 
+window.clearSpeakingIndicator = (uid) => {
+  const key = String(uid);
+  if (speakingTimers.has(key)) {
+    clearTimeout(speakingTimers.get(key));
+    speakingTimers.delete(key);
+  }
+  document.getElementById(`avatar-${uid}`)?.classList.remove("speaking");
+};
+
 window.client.on("volume-indicator", (volumes) => {
   volumes.forEach((vol) => {
-    const id = vol.uid === 0 ? window.client.uid : vol.uid;
+    if (window.isScreenShareUid(vol.uid)) return;
+    // The microphone monitor exclusively owns the local indicator. Agora can
+    // still report local levels while the microphone is disabled.
+    const id = String(vol.uid);
+    if (id === "0" || id === String(window.client.uid)) return;
     const avatar = document.getElementById(`avatar-${id}`);
     if (!avatar) return;
+    const remote = window.client.remoteUsers.find((user) => String(user.uid) === id);
+    if (avatar.classList.contains("muted") || remote?.hasAudio === false) {
+      window.clearSpeakingIndicator(id);
+      return;
+    }
 
     if (vol.level > REMOTE_SPEAKING_THRESHOLD) {
       avatar.classList.add("speaking");
@@ -1321,13 +1599,14 @@ if (joinBtn) joinBtn.onclick = async () => {
 
     // --- 3. JOIN AGORA CHANNEL ---
     await window.client.join(window.APP_ID, window.CHANNEL, null, window.myAgoraUID);
-    window.client.enableAudioVolumeIndicator(200, 3);
+    window.client.enableAudioVolumeIndicator();
 
     // --- 4. PUBLISH AUDIO TRACK ---
     startLocalVolumeMonitor(localTracks.audioTrack);
     await window.client.publish(localTracks.audioTrack);
     window.isVoiceJoined = true;
     startAfkTimer();
+    void window.loadSpeakers?.();
 
     // --- 5. PRESENCE IDENTITY IS NOW MARKED AS VOICE-JOINED ---
     window.uidNameMap[window.client.uid] = window.myDisplayName;
@@ -1356,6 +1635,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
     window.isVoiceJoined = false;
+    window.setWatchedScreen(null);
     clearAfkTimers();
     stopLocalVolumeMonitor();
     if (localTracks.audioTrack) {
@@ -1389,6 +1669,7 @@ async function leaveChannel(reason = "manual") {
   isLeavingChannel = true;
   try {
     window.isVoiceJoined = false;
+    window.setWatchedScreen(null);
     clearAfkTimers();
 
     // --- 1. WAKE LOCK ---
@@ -1398,7 +1679,7 @@ async function leaveChannel(reason = "manual") {
     }
 
     // --- 2. SCREEN SHARE ---
-    if (screenTrack) await stopScreenShare();
+    await stopScreenShare();
 
     // --- 3. LOCAL AUDIO TRACK ---
     stopLocalVolumeMonitor();
@@ -1421,6 +1702,14 @@ async function leaveChannel(reason = "manual") {
     speakingTimers.forEach((timer) => clearTimeout(timer));
     speakingTimers.clear();
     remoteVolumes.clear();
+    remoteScreenVolumes.clear();
+    for (const uid of remoteScreenTracks.keys()) {
+      window.removeVideoFromCard(uid);
+      window.setScreenAudioAvailable?.(uid, false);
+    }
+    remoteScreenTracks.clear();
+    remoteMediaSubscriptions.clear();
+    remoteScreenErrors.clear();
 
     // --- 6. BUTTONS ---
     const leaveBtn = document.getElementById("leave-btn");
@@ -1467,26 +1756,47 @@ if (leaveBtn) leaveBtn.onclick = () => leaveChannel("manual");
 // MUTE TOGGLE
 // Enables/disables the local audio track without unpublishing it
 // ============================================================
+let muteToggleInFlight = false;
 window.toggleMute = async () => {
-  if (!localTracks.audioTrack) return;
+  if (!localTracks.audioTrack || muteToggleInFlight) return;
+  const audioTrack = localTracks.audioTrack;
+  const uid = window.client.uid;
+  muteToggleInFlight = true;
+  const wasMuted = isMuted;
+  isMuted = !wasMuted;
 
-  isMuted = !isMuted;
+  if (isMuted) {
+    stopLocalVolumeMonitor();
+    window.clearSpeakingIndicator(window.client.uid);
+  }
 
-  // setEnabled(false) mutes without destroying the track
-  await localTracks.audioTrack.setEnabled(!isMuted);
+  try {
+    // setEnabled(false) disables microphone publishing without destroying it.
+    await audioTrack.setEnabled(!isMuted);
+  } catch (error) {
+    if (localTracks.audioTrack !== audioTrack) return;
+    isMuted = wasMuted;
+    if (!isMuted && localTracks.audioTrack) startLocalVolumeMonitor(localTracks.audioTrack);
+    console.error("Microphone mute change failed:", error);
+    return;
+  } finally {
+    muteToggleInFlight = false;
+  }
+  // A user can leave while the SDK is toggling capture. Do not restore the
+  // old call's UI or write presence under an undefined/new participant UID.
+  if (localTracks.audioTrack !== audioTrack) return;
 
-  if (!isMuted) {
-    startLocalVolumeMonitor(localTracks.audioTrack); // ← restart fresh
+  if (!isMuted && localTracks.audioTrack) {
+    startLocalVolumeMonitor(localTracks.audioTrack);
   }
 
   // Update mute state in Firebase so remote users can see it in their UI
   firebase.database()
-  .ref(`presence/${window.CHANNEL}/${window.client.uid}`)
+  .ref(`presence/${window.CHANNEL}/${uid}`)
   .update({ muted: isMuted });
 
   // Visually dim the local avatar when muted
-  const avatarEl = document.getElementById(`avatar-${window.client.uid}`);
-  if (avatarEl) avatarEl.classList.toggle("muted", isMuted);
+  window.setUserMuted(window.client.uid, isMuted);
 
   // Reflect mute state in the header status text
   const s = document.getElementById("status");
@@ -1506,6 +1816,37 @@ window.adjustVolume = (uid, vol) => {
   const user = window.client.remoteUsers.find((u) => u.uid == uid);
   if (user?.audioTrack) user.audioTrack.setVolume(volume);
 };
+
+window.getRemoteVolume = (uid, kind = "voice") => kind === "screen"
+  ? (remoteScreenVolumes.get(String(uid)) ?? DEFAULT_SCREEN_VOLUME)
+  : (remoteVolumes.get(String(uid)) ?? 100);
+
+window.adjustScreenVolume = (uid, vol) => {
+  const volume = Math.max(0, Math.min(100, Number.parseInt(vol, 10) || 0));
+  remoteScreenVolumes.set(String(uid), volume);
+  remoteScreenTracks.get(String(uid))?.audio?.setVolume(watchedScreenUid === String(uid) ? volume : 0);
+};
+
+// Read-only diagnostics for cross-browser screen-share troubleshooting.
+window.getScreenShareStatus = () => ({
+  sdkVersion: AgoraRTC.VERSION,
+  receiverVersion: "screen-audio-7",
+  watchedScreenUid,
+  connection: window.client.connectionState,
+  users: window.client.remoteUsers.map((user) => {
+    const isScreen = window.isScreenShareUid(user.uid);
+    const ownerUid = isScreen ? screenOwnerUid(user.uid) : user.uid;
+    const tracks = remoteScreenTracks.get(String(ownerUid));
+    return {
+      uid: user.uid, ownerUid, isScreen,
+      publishedAudio: user.hasAudio, publishedVideo: user.hasVideo,
+      receivedScreenAudio: !!tracks?.audio, receivedScreenVideo: !!tracks?.video,
+      ownerCardPresent: !!document.getElementById(`user-${ownerUid}`),
+      audioError: remoteScreenErrors.get(`${user.uid}:audio`) || null,
+      videoError: remoteScreenErrors.get(`${user.uid}:video`) || null,
+    };
+  }),
+});
 /**
  * js/chat.js
  * Handles all chat logic: rendering messages, slash commands,
@@ -2341,7 +2682,7 @@ function handleCommand(text) {
     case "/ping":
       if (window.client && typeof window.client.getRTCStats === "function") {
         const rtc = window.client.getRTCStats();
-        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${rtc.UserCount}`, "#fbbf24");
+        window.appendMessage("Sistem", `📊 Mreža: ${rtc.RTT}ms | Korisnika: ${window.getVoiceParticipantCount()}`, "#fbbf24");
       }
       return true;
 
@@ -2547,8 +2888,7 @@ function startChat() {
       }
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
-      const avatar = document.getElementById(`avatar-${uid}`);
-      if (avatar) avatar.classList.toggle("muted", data.muted === true);
+      window.setUserMuted(uid, data.muted === true);
     });
 }
 
@@ -2564,6 +2904,7 @@ function startPresenceListener() {
       if (data.voiceJoined === false) return;
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
+      window.setUserMuted(uid, data.muted === true);
     });
 
   firebase.database()
