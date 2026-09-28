@@ -2,7 +2,7 @@
 <html lang="sr">
 <meta charset="utf-8">
 <title>Screen player interaction check</title>
-<link rel="stylesheet" href="../../css/style.css?v=screen-audio-7">
+<link rel="stylesheet" href="../../css/style.css">
 <style>
 body { background: #0b1020; }
 .screen-media canvas { width:100%; height:100%; object-fit:contain; }
@@ -38,8 +38,8 @@ window.AgoraRTC = {
   async createScreenVideoTrack(){return [videoTrack(),audioTrack('local')];}
 };
 </script>
-<script src="../../js/ui.js?v=screen-audio-7-labels"></script>
-<script src="../../js/rtc.js?v=screen-audio-7"></script>
+<script src="../../js/ui.js"></script>
+<script src="../../js/rtc.js"></script>
 <script>
 drawUser(123456,'Local sharer','🐢',true);
 drawUser(234567,'Remote sharer','🦊');
