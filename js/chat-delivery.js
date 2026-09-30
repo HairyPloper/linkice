@@ -21,7 +21,7 @@
       if (input.value) localStorage.setItem(draftKey, input.value);
       else localStorage.removeItem(draftKey);
       lastSavedDraft = input.value;
-      if (draftNotice) draftNotice.textContent = input.value ? "Nacrt sačuvan u ovom pregledaču" : "";
+      if (draftNotice) draftNotice.textContent = "";
     } catch {
       if (draftNotice) draftNotice.textContent = "Pregledač ne može da sačuva nacrt.";
     }
@@ -66,6 +66,7 @@
       bubble.appendChild(delivery);
     }
     delivery.dataset.state = entry.state;
+    delivery.hidden = false;
     delivery.children[0].textContent = entry.state === "failed"
       ? (entry.restored ? "Slanje nije potvrđeno." : "Poruka nije poslata.")
       : canSend() ? "Slanje…" : "Čeka vezu…";
@@ -81,7 +82,9 @@
     const state = canSend() ? "online" : connecting ? "connecting" : "offline";
     if (status) {
       status.dataset.state = state;
-      status.textContent = state === "online" ? "Chat povezan" : state === "connecting" ? "Chat se povezuje…" : "Chat offline";
+      status.hidden = state === "online";
+      if (status.parentElement) status.parentElement.hidden = status.hidden;
+      status.textContent = state === "online" ? "" : state === "connecting" ? "Chat se povezuje…" : "Chat offline";
     }
     if (reconnect) reconnect.hidden = state !== "offline";
     for (const entry of outgoing.values()) renderMessage(entry);
@@ -129,7 +132,8 @@
       const delivery = bubble?.querySelector(".message-delivery");
       if (delivery) {
         delivery.dataset.state = "sent";
-        delivery.children[0].textContent = "Poslato";
+        delivery.hidden = true;
+        delivery.children[0].textContent = "";
         delivery.children[1].hidden = true;
       }
       if (entry.data.type === "poll") bubble?.querySelectorAll(".poll-btn").forEach(button => { button.disabled = false; });
@@ -193,7 +197,6 @@
     const saved = localStorage.getItem(draftKey);
     if (input && saved !== null) input.value = saved;
     lastSavedDraft = input?.value;
-    if (saved && draftNotice) draftNotice.textContent = "Nacrt vraćen";
   } catch { /* Sending still works when browser storage is unavailable. */ }
   try {
     const records = JSON.parse(sessionStorage.getItem(outboxKey) || "[]");

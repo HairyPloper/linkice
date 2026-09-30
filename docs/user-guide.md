@@ -37,11 +37,11 @@ When you are alone in voice, page activity and microphone speech reset the inact
 
 ## Chat and history
 
-The chat header shows **Chat se povezuje…**, **Chat povezan**, or **Chat offline** independently of voice. Use **Poveži ponovo** if chat cannot reconnect. You can keep writing while offline.
+The chat header shows **Chat se povezuje…** while connecting or **Chat offline** when disconnected, independently of voice. The indicator disappears once connected. Use **Poveži ponovo** if chat cannot reconnect. You can keep writing while offline.
 
-Outgoing messages show **Slanje…** (sending), **Čeka vezu…** (waiting for a connection), **Poslato** (saved by the server), or **Poruka nije poslata** with **Pokušaj ponovo** to retry. Retrying uses the same message ID to avoid duplicates. Unconfirmed messages survive refreshes in the same tab and offer retry; they are not automatically resent after a refresh. Closing that tab clears its unsent message copies.
+Outgoing messages show **Slanje…** (sending), **Čeka vezu…** (waiting for a connection), or **Poruka nije poslata** with **Pokušaj ponovo** to retry. The status disappears when the server confirms the message. Retrying uses the same message ID to avoid duplicates. Unconfirmed messages survive refreshes in the same tab and offer retry; they are not automatically resent after a refresh. Closing that tab clears its unsent message copies.
 
-Drafts are saved separately for each room in this browser and restored after refreshes. Sending moves the text into an outgoing message so you can start a new draft immediately. If browser storage is unavailable, the text stays in the input until sending is confirmed.
+Drafts are saved silently for each room in this browser and restored after refreshes. Sending moves the text into an outgoing message so you can start a new draft immediately. If browser storage is unavailable, the text stays in the input until sending is confirmed.
 
 Chat starts with the latest 50 stored messages. Click **Učitaj starije poruke** at the top to load older messages in batches of 50 while keeping your reading position. Messages addressed to other people are filtered from the view, so a batch can contain fewer visible messages. Loading older messages does not increase unread counts.
 

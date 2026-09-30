@@ -11,9 +11,9 @@ test('deployment rejects unrewritten source tags, missing bundles and invalid Ja
   t.after(() => fs.rmSync(dir, {recursive:true, force:true}));
   fs.mkdirSync(path.join(dir,'js'));
   const html = text => fs.writeFileSync(path.join(dir,'index.html'),text);
-  html('<script src="js/main.js?v=old"></script>');
+  html('<script src="js/main.js"></script>');
   assert.throws(()=>verify(dir),/exactly one local bundle/);
-  html('<script src="https://cdn.example/sdk.js"></script><script src="js/bundle.min.js?v=test"></script>');
+  html('<script src="https://cdn.example/sdk.js"></script><script src="js/bundle.min.js"></script>');
   assert.throws(()=>verify(dir),/ENOENT/);
   fs.writeFileSync(path.join(dir,'js/bundle.min.js'),'const broken = ;');
   assert.throws(()=>verify(dir),SyntaxError);

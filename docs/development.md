@@ -90,7 +90,7 @@ The [GitHub Actions workflow](../.github/workflows/deploy.yml) runs regression t
 - `dev_b` publishes under `/dev/`.
 - Generated files are published to the `gh-pages` branch.
 
-The deployed HTML loads one versioned application bundle. If you add or reorder scripts, update both `index.html` and the workflow. After building a local `dist` directory, verify its HTML and bundle with:
+The deployed HTML loads one application bundle. If you add or reorder scripts, update both `index.html` and the workflow. After building a local `dist` directory, verify its HTML and bundle with:
 
 ```sh
 node scripts/verify-build.cjs dist

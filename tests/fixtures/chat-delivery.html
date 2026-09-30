@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chat delivery check</title>
-<link rel="stylesheet" href="../../css/style.css?v=chat-status-3">
+<link rel="stylesheet" href="../../css/style.css">
 <style>
 body { background: #0b1020; }
 #checks { position: fixed; top: 24px; left: 24px; width: 290px; color: white; font: 14px system-ui; }
@@ -76,8 +76,8 @@ window.firebase = { auth: () => fixtureAuth, database: () => ({
 }) };
 firebase.database.ServerValue = { TIMESTAMP: { '.sv': 'timestamp' } };
 </script>
-<script src="../../js/chat.js?v=chat-status-2"></script>
-<script src="../../js/chat-delivery.js?v=chat-status-2"></script>
+<script src="../../js/chat.js"></script>
+<script src="../../js/chat-delivery.js"></script>
 <script>
 document.getElementById('fixture-connect').onclick = () => fixtureConnection(true);
 document.getElementById('fixture-offline').onclick = () => fixtureConnection(false);

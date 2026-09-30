@@ -13,8 +13,11 @@ test('connection status distinguishes starting, connected, offline, and permissi
   assert.equal(status.dataset.state, 'offline');
   app.connect(true);
   assert.equal(status.dataset.state, 'online');
+  assert.equal(status.hidden, true);
+  assert.equal(status.textContent, '');
   app.connect(false);
   assert.equal(status.dataset.state, 'offline');
+  assert.equal(status.hidden, false);
   assert.equal(app.nodes.get('chat-reconnect-btn').hidden, false);
   app.connect(true);
   app.window.chatDelivery.unavailable();
@@ -39,8 +42,10 @@ test('drafts survive refresh, stay separate per room, and can be cleared', () =>
   const local = new Map();
   const first = setup({ local });
   first.type('An unfinished thought 🪐');
+  assert.equal(first.nodes.get('chat-draft-status').textContent, '');
   const refreshed = setup({ local });
   assert.equal(refreshed.input.value, 'An unfinished thought 🪐');
+  assert.equal(refreshed.nodes.get('chat-draft-status').textContent, '');
   assert.equal(setup({ local, room: 'another-room' }).input.value, '');
   refreshed.type('');
   assert.equal(setup({ local }).input.value, '');
@@ -62,6 +67,8 @@ test('offline sends wait for the real connection and become sent only after ackn
   app.pending[0].resolve();
   await settle();
   assert.equal(app.delivery().dataset.state, 'sent');
+  assert.equal(app.delivery().hidden, true);
+  assert.equal(app.delivery().children[0].textContent, '');
   assert.equal(app.input.value, 'A newer draft');
   assert.equal(app.pushed.length, 1);
   assert.equal(app.session.size, 0);

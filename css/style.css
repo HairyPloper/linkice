@@ -853,7 +853,7 @@ body {
   font-size: 11px;
   line-height: 1.4;
 }
-#chat-connection-status { color: #a7f3d0; }
+.chat-connection[hidden], .message-delivery[hidden] { display: none; }
 #chat-connection-status::before {
   content: "";
   display: inline-block;
@@ -890,7 +890,6 @@ body {
   font-size: 11px;
 }
 .message-delivery[data-state="failed"] { color: #fda4af; }
-.message-delivery[data-state="sent"] { color: #a7f3d0; }
 .message-delivery button:disabled { opacity: 0.5; cursor: default; }
 #chat-draft-status {
   flex-shrink: 0;
