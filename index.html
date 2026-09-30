@@ -221,6 +221,10 @@
       </div>
 
       <!-- Scrollable message feed (populated dynamically by chat.js) -->
+      <div id="chat-history-controls" hidden>
+        <button id="load-older-messages" type="button">Učitaj starije poruke</button>
+        <span id="chat-history-status" role="status"></span>
+      </div>
       <div id="chat-messages"></div>
 
       <!-- Slash-command autocomplete menu (shown/hidden by chat.js) -->
@@ -382,6 +386,6 @@
          APPLICATION SCRIPTS
          Load order matters: main → utils → ui → rtc → chat -> whiteboard → notifications
          ============================================================ -->
-    <script src="js/bundle.min.js?v=01b1c032a625bccb911b90027b4360c5e895a9e8"></script>
+    <script src="js/bundle.min.js?v=e794eee1faa5c30c413d6421382903b1d5d72fe7"></script>
   </body>
 </html>
