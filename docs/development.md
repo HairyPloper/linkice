@@ -79,7 +79,7 @@ node --test tests/*.test.js
 
 The regression tests use simulated SDK and browser behavior. They do not replace live checks of media permissions, actual audio hardware, or browser compatibility.
 
-The [screen player fixture](../tests/fixtures/screen-player.html) provides a local browser test page with simulated data. Open it through the local server to check the UI without posting to a live room.
+The [chat history fixture](../tests/fixtures/chat-history.html) and [screen player fixture](../tests/fixtures/screen-player.html) provide local browser test pages with simulated data. Open them through the local server to check the UI without posting to a live room.
 
 ## Deployment
 

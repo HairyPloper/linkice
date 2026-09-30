@@ -282,9 +282,9 @@ window.setupNotificationIntegration = function() {
 
   if (window.appendMessage) {
     const originalAppendMessage = window.appendMessage;
-    window.appendMessage = function(name, text, color, snapshotKey, data) {
+    window.appendMessage = function(name, text, color, snapshotKey, data, options = {}) {
       const result = originalAppendMessage.apply(this, arguments);
-      if (isInitialLoad) return result;
+      if (isInitialLoad || options.historical) return result;
       if (data && window.notificationManager) {
         const isMe = window.isOwnChatMessage
           ? window.isOwnChatMessage(data)

@@ -799,6 +799,28 @@ body {
 }
 
 /* Scrollable message feed */
+#chat-history-controls {
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+#chat-history-controls[hidden],
+#chat-container.collapsed #chat-history-controls {
+  display: none;
+}
+#load-older-messages {
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: rgba(128, 95, 245, 0.15);
+  color: inherit;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+#load-older-messages:disabled { cursor: wait; opacity: 0.65; }
+#chat-history-status { display: block; margin-top: 4px; }
+#chat-history-status:empty { display: none; }
+
 #chat-messages {
   flex-grow: 1;
   padding: 15px;
