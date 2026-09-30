@@ -155,7 +155,8 @@ body {
     display: none !important;
   }
   #chat-container.collapsed {
-    height: 50px !important;
+    height: auto !important;
+    bottom: auto !important;
   }
 
   /* Deep rich gradient for mobile background */
@@ -831,6 +832,7 @@ body {
 #chat-header {
   user-select: none;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
   padding: 10px;
@@ -839,6 +841,65 @@ body {
   border-radius: 19px 19px 0 0;
 }
 #chat-container.collapsed #chat-header { border-bottom-color: transparent; }
+
+.chat-heading { flex: 1; min-width: 0; }
+.chat-heading #space-name { display: block; }
+.chat-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 8px;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+#chat-connection-status { color: #a7f3d0; }
+#chat-connection-status::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+#chat-connection-status[data-state="connecting"] { color: #fde68a; }
+#chat-connection-status[data-state="offline"] { color: #fda4af; }
+#chat-reconnect-btn, .message-delivery button {
+  font: inherit;
+  color: #e0e7ff;
+  background: rgba(129, 140, 248, 0.12);
+  border: 1px solid var(--space-glass-border);
+  border-radius: 6px;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+#chat-reconnect-btn[hidden], .message-delivery button[hidden] { display: none; }
+#chat-reconnect-btn:focus-visible, .message-delivery button:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+.message-delivery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 10px;
+  margin-top: 5px;
+  color: #fde68a;
+  font-size: 11px;
+}
+.message-delivery[data-state="failed"] { color: #fda4af; }
+.message-delivery[data-state="sent"] { color: #a7f3d0; }
+.message-delivery button:disabled { opacity: 0.5; cursor: default; }
+#chat-draft-status {
+  flex-shrink: 0;
+  padding: 0 12px 8px;
+  color: #b4bbcf;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.2);
+}
+#chat-draft-status:empty, #chat-container.collapsed #chat-draft-status { display: none; }
 
 #space-name {
   margin-right: auto;

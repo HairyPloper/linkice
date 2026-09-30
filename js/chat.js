@@ -52,30 +52,42 @@ let selectedIndex = 0;
 // FIREBASE AUTH
 // Waits for anonymous auth before initialising the chat listener
 // ============================================================
-firebase.auth().onAuthStateChanged(async (user) => {
-  if (user) {
-    // Chat users can receive push without joining voice: sync existing subscription on auth.
-    if (window.notificationManager) {
-      window.notificationManager.ensurePushSubscription(false).catch(() => {});
-    }
-    await window.prepareIdentityForSpace();
-    startChat();
+let chatPresenceStarted = false;
+window.restartChat = async () => {
+  await window.prepareIdentityForSpace();
+  startChat();
+  if (!chatPresenceStarted) {
     startPresenceListener();
-    window.startIdentityConnectionMonitor();
-    if (window.identityNotice) {
-      window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
-      window.identityNotice = null;
-    }
-    // Safety net: remove the skeleton loader after 5 s if no messages arrive
-    setTimeout(() => {
-      const skeleton = document.getElementById("chat-skeleton-loader");
-      if (skeleton) skeleton.remove();
-    }, 5000);
-  } else {
-    // Sign in anonymously — no account needed
-    firebase.auth().signInAnonymously();
+    chatPresenceStarted = true;
   }
-});
+  window.startIdentityConnectionMonitor();
+};
+firebase.auth().onAuthStateChanged(async (user) => {
+  try {
+    if (user) {
+      // Chat users can receive push without joining voice: sync existing subscription on auth.
+      if (window.notificationManager) {
+        window.notificationManager.ensurePushSubscription(false).catch(() => {});
+      }
+      await window.restartChat();
+      if (window.identityNotice) {
+        window.appendMessage("Sistem", window.identityNotice, "#fbbf24");
+        window.identityNotice = null;
+      }
+      // Safety net: remove the skeleton loader after 5 s if no messages arrive.
+      setTimeout(() => {
+        const skeleton = document.getElementById("chat-skeleton-loader");
+        if (skeleton) skeleton.remove();
+      }, 5000);
+    } else {
+      // Sign in anonymously — no account needed.
+      await firebase.auth().signInAnonymously();
+    }
+  } catch (error) {
+    console.warn("Chat connection failed:", error);
+    window.chatDelivery?.unavailable();
+  }
+}, () => window.chatDelivery?.unavailable());
 
 // ============================================================
 // SKELETON LOADER
@@ -126,7 +138,7 @@ window.appendMessage = (
   color = "#805ff5",
   snapshotKey = null,
   data = null,
-  { historical = false, before = null } = {},
+  { historical = false, before = null, outgoing = false } = {},
 ) => {
   if (!chatMessages) return;
   if (snapshotKey && document.getElementById(`chat-msg-${snapshotKey}`)) return;
@@ -148,7 +160,7 @@ window.appendMessage = (
 
   // Align own messages to the right and tint them green
   const isSystem = name === "Sistem" || (data && data.username === "Sistem");
-  const isMe = !isSystem && window.isOwnChatMessage(data);
+  const isMe = !isSystem && (outgoing || window.isOwnChatMessage(data));
   msgDiv.classList.add(isSystem ? "chat-msg--system" : isMe ? "chat-msg--own" : "chat-msg--other");
   msgDiv.style.alignSelf = isMe ? "flex-end" : "flex-start";
   if (isMe) msgDiv.style.backgroundColor = "rgba(74, 222, 128, 0.1)";
@@ -678,14 +690,13 @@ function renderPoll(msgDiv, snapshotKey, data, color, timeString) {
 
 // ============================================================
 // SEND MESSAGE
-// Validates input, records history, checks for a command, then pushes to Firebase
+// Validates input, records history, then preserves the message before sending.
 // ============================================================
-let messageSendPending = false;
 window.sendMessage = async () => {
-  if (messageSendPending) return;
   const draft = chatInput?.value || "";
   const text = draft.trim();
-  if (!text || !window.chatRef) return;
+  if (!text || !window.chatDelivery) return;
+  window.chatDelivery.saveDraft();
 
   // Record in command history (capped at 50 entries)
   commandHistory.unshift(text);
@@ -693,44 +704,27 @@ window.sendMessage = async () => {
   historyIndex = -1; // Reset navigation index
 
   // If it's a slash command, handle it locally and skip Firebase push
-  if (handleCommand(text)) {
-    chatInput.value = "";
+  if (text.startsWith("/") && !window.chatRef) return;
+  const command = handleCommand(text);
+  if (command) {
+    if (command !== "queued") chatInput.value = "";
+    window.chatDelivery.saveDraft();
     chatInput.focus();
     return;
   }
 
-  // Push regular message to Firebase Realtime Database
-  messageSendPending = true;
-  if (sendBtn) sendBtn.disabled = true;
-  try {
-    // Ensure push subscription from a chat user gesture (not only voice join).
-    if (window.notificationManager && !window.notificationManager.hasEnsuredPushThisSession) {
-      // Optional notifications must never block chat delivery.
-      void window.notificationManager.ensurePushSubscription(true).catch(() => {});
-    }
-
-    await window.chatRef.push({
-      username: window.myDisplayName,
-      text:      text,
-      color:     window.myColor || "#805ff5",
-      ...getChatSenderMetadata(),
-      timestamp: firebase.database.ServerValue.TIMESTAMP,
-    });
-    // The user may already be composing their next message.
-    if (chatInput.value === draft) chatInput.value = "";
-    chatInput.focus();
-
-    // Trigger a global push notification for firebase notification subscribers (e.g. mobile users who have left the tab)
-    if (window.notificationManager) {
-      window.notificationManager.triggerGlobalPush(window.myDisplayName, text);
-    }
-  } catch (err) {
-    console.error("Greška pri slanju:", err);
-    window.appendMessage("Sistem", "Poruka nije poslata. Pokušaj ponovo.", "#ef4444");
-  } finally {
-    messageSendPending = false;
-    if (sendBtn) sendBtn.disabled = false;
+  // Optional notifications must never block the outgoing message.
+  if (window.notificationManager && !window.notificationManager.hasEnsuredPushThisSession) {
+    void window.notificationManager.ensurePushSubscription(true).catch(() => {});
   }
+
+  window.chatDelivery.enqueue({
+    username: window.myDisplayName,
+    text,
+    color: window.myColor || "#805ff5",
+    ...getChatSenderMetadata(),
+    timestamp: firebase.database.ServerValue.TIMESTAMP,
+  }, draft);
 };
 
 if (sendBtn) sendBtn.onclick = (e) => {
@@ -761,6 +755,7 @@ function handleCommand(text) {
         updateChatHistoryControls();
       }
       chatMessages.innerHTML = "";
+      window.chatDelivery?.redraw();
       return true;
 
     // Change the user's display name for this session
@@ -785,12 +780,12 @@ function handleCommand(text) {
     // Roll a random number between 1 and max (default 100)
     case "/roll":
       const max = parseInt(args[1]) || 100;
-      window.chatRef.push({
+      window.chatDelivery.enqueue({
         username: "Sistem",
         text: `🎲 **${window.myDisplayName}** rola: **${Math.floor(Math.random() * max) + 1}** (1-${max})`,
         color: "#fbbf24",
-      });
-      return true;
+      }, chatInput.value);
+      return "queued";
     case "/space":
       const spaceArg = args[1];
       if (!spaceArg) {
@@ -843,7 +838,7 @@ function handleCommand(text) {
       const pollVotes = {};
       options.forEach((opt) => (pollVotes[getPollVoteKey(opt)] = 0));
 
-      window.chatRef.push({
+      window.chatDelivery.enqueue({
         username:  window.myDisplayName,
         ...getChatSenderMetadata(),
         type:      "poll",
@@ -852,8 +847,8 @@ function handleCommand(text) {
         votes:     pollVotes,
         text:      "",
         timestamp: Date.now(),
-      });
-      return true;
+      }, chatInput.value);
+      return "queued";
 
     // Show Agora network stats (RTT + user count)
     case "/ping":
@@ -929,7 +924,7 @@ function handleCommand(text) {
           return true;
         }
 
-        window.chatRef.push({
+        window.chatDelivery.enqueue({
           username:  window.myDisplayName,
           ...getChatSenderMetadata(),
           text:      privateMsg,
@@ -937,7 +932,8 @@ function handleCommand(text) {
           toSessionId: targetSessionId,
           type:      "private",
           timestamp: Date.now(),
-        });
+        }, chatInput.value);
+        return "queued";
       } else {
         window.appendMessage("Sistem", "Greška: Koristi /msg SpojenoIme Poruka ili /msg \"Ime Sa Razmacima\" Poruka", "#ef4444");
       }
@@ -1001,9 +997,12 @@ async function readInitialChatHistory(state) {
     state.ready = true;
     state.hasMore = snapshot.numChildren() >= CHAT_PAGE_SIZE;
     document.getElementById("chat-skeleton-loader")?.remove();
+    window.chatDelivery?.redraw(true);
+    window.chatDelivery?.ready();
   } catch (error) {
     if (state !== chatHistory || version !== state.version) return;
     console.warn("Initial chat history unavailable:", error);
+    window.chatDelivery?.unavailable();
     state.loading = false;
     updateChatHistoryControls("Istorija nije učitana. Pokušaj ponovo.");
     return;
@@ -1054,7 +1053,12 @@ const loadOlderButton = document.getElementById("load-older-messages");
 if (loadOlderButton) loadOlderButton.onclick = () => window.loadOlderMessages();
 
 function startChat() {
-  if (chatHistory) chatHistory.query.off("child_added", chatHistory.receive);
+  const firstStart = !chatHistory;
+  if (chatHistory) {
+    chatHistory.query.off("child_added", chatHistory.receive);
+    chatHistory.ref.off("child_changed", chatHistory.changed);
+    chatHistory.presenceRef?.off("child_changed", chatHistory.presenceChanged);
+  }
   window.chatRef = firebase.database().ref(`messages/${window.CHANNEL}`);
   const state = chatHistory = {
     ref: window.chatRef, query: window.chatRef.orderByKey().limitToLast(CHAT_PAGE_SIZE),
@@ -1062,7 +1066,7 @@ function startChat() {
   };
 
   // Prepend the welcome banner (ASCII art)
-  window.appendSystemHTML(welcomeArt, true);
+  if (firstStart) window.appendSystemHTML(welcomeArt, true);
 
   // Listen to the last 50 messages; also fires for each new incoming message
   state.render = (snapshot, options = {}) => {
@@ -1137,11 +1141,11 @@ function startChat() {
     state.seen.add(snapshot.key);
     state.render(snapshot);
   };
-  state.query.on("child_added", state.receive);
+  state.query.on("child_added", state.receive, () => window.chatDelivery?.unavailable());
   void readInitialChatHistory(state);
 
   // Listen for updates to existing messages (used for live poll vote counts)
-  window.chatRef.on("child_changed", (snapshot) => {
+  state.changed = (snapshot) => {
     const message = snapshot.val();
     const messageKey = snapshot.key;
     if (message && message.type === "poll" && Array.isArray(message.options)) {
@@ -1150,12 +1154,12 @@ function startChat() {
         if (el) el.innerText = getPollVoteCount(message.votes, opt);
       });
     }
-  });
+  };
+  state.ref.on("child_changed", state.changed);
 
   // Presence listener — updates muted state on remote avatars
-  firebase.database()
-    .ref(`presence/${window.CHANNEL}`)
-    .on("child_changed", (snapshot) => {
+  state.presenceRef = firebase.database().ref(`presence/${window.CHANNEL}`);
+  state.presenceChanged = (snapshot) => {
       const data = snapshot.val();
       const uid  = snapshot.key;
       if (!data?.displayName) return;
@@ -1167,7 +1171,9 @@ function startChat() {
       const isMe = uid === String(window.myAgoraUID);
       window.drawUser(uid, data.displayName, data.icon, isMe);
       window.setUserMuted(uid, data.muted === true);
-    });
+    };
+  state.presenceRef.on("child_changed", state.presenceChanged);
+  window.chatDelivery?.redraw();
 }
 
 // Presence listener — adds/removes users from the grid as they join/leave
@@ -1273,7 +1279,7 @@ window.handleFileUpload = async (file) => {
     const expiryDuration = FILE_EXPIRY_MS[expiry];
     const fileExpiresAt = expiryDuration ? uploadStartedAt + expiryDuration : null;
     // Post the URL to chat — the media formatter will embed it appropriately
-    window.chatRef.push({
+    window.chatDelivery.enqueue({
       username:  window.myDisplayName,
       ...getChatSenderMetadata(),
       type:      "file",
@@ -1376,6 +1382,7 @@ if (chatInput) {
         chatInput.value = commandHistory[historyIndex];
       }
       e.preventDefault();
+      window.chatDelivery?.saveDraft();
 
     } else if (e.key === "ArrowDown") {
       // Navigate forwards through command history (empty = clear input)
@@ -1387,6 +1394,7 @@ if (chatInput) {
         chatInput.value = "";
       }
       e.preventDefault();
+      window.chatDelivery?.saveDraft();
     }
   };
 }
@@ -1411,6 +1419,7 @@ if (uploadBtn && fileInput) {
 // ============================================================
 window.applyCommand = (cmd) => {
   chatInput.value = cmd + " "; // Trailing space so the user can type args immediately
+  window.chatDelivery?.saveDraft();
   chatInput.focus();
   autoMenu.style.display = "none";
 };
@@ -1443,6 +1452,7 @@ window.addEmoji = (emoji) => {
     chatInput.value.slice(0, start) +
     emoji +
     chatInput.value.slice(chatInput.selectionEnd);
+  window.chatDelivery?.saveDraft();
   chatInput.focus();
   if (emojiPicker) emojiPicker.classList.add("hidden");
 };

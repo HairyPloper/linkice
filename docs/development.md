@@ -55,6 +55,7 @@ The deployed Firebase rules are not present here. Review read/write permissions 
 | [js/ui.js](../js/ui.js) | Participant cards, chat layout, and media overlays. |
 | [js/rtc.js](../js/rtc.js) | Agora voice, microphone, screen sharing, and reconnection. |
 | [js/chat.js](../js/chat.js) | Chat history, commands, polls, AI requests, and uploads. |
+| [js/chat-delivery.js](../js/chat-delivery.js) | Chat connection state, per-room drafts, outgoing messages, and retries. |
 | [js/whiteboard.js](../js/whiteboard.js) | Shared drawing and the word-guessing game. |
 | [js/notifications.js](../js/notifications.js) | Browser notification and push subscription handling. |
 | [sw.js](../sw.js) | Service worker for push notifications. |
