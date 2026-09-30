@@ -1095,6 +1095,11 @@ let localTracks = { audioTrack: null };
 
 // Tracks whether the local mic is currently muted
 let isMuted = false;
+let isDeafened = false;
+let mutedBeforeDeafen = false;
+let muteToggleInFlight = false;
+let microphoneSwitchInFlight = false;
+const remoteVoiceTracks = new Map();
 
 // A second publisher keeps screen audio separate from the microphone stream.
 let screenSession = null;
@@ -1110,8 +1115,7 @@ let watchedScreenUid = null;
 window.setWatchedScreen = (uid) => {
   watchedScreenUid = uid == null ? null : String(uid);
   for (const [owner, tracks] of remoteScreenTracks) {
-    tracks.audio?.setVolume(owner === watchedScreenUid
-      ? window.getRemoteVolume(owner, "screen") : 0);
+    tracks.audio?.setVolume(getPlaybackVolume(owner, "screen"));
   }
 };
 
@@ -1541,9 +1545,9 @@ window.client.on("user-published", async (user, mediaType) => {
       window.syncScreenShareCard(ownerUid);
     }
     if (mediaType === "audio") {
-      const volume = isScreen
-        ? (watchedScreenUid === String(ownerUid) ? window.getRemoteVolume(ownerUid, "screen") : 0)
-        : window.getRemoteVolume(ownerUid);
+      if (!isScreen) remoteVoiceTracks.set(String(ownerUid), track);
+      const kind = isScreen ? "screen" : "voice";
+      const volume = getPlaybackVolume(ownerUid, kind);
       track.setVolume(volume);
       let device = window.getSpeakerDevice?.();
       if (!device) {
@@ -1561,6 +1565,8 @@ window.client.on("user-published", async (user, mediaType) => {
         }
       }
       if (!isCurrent()) return;
+      const currentVolume = getPlaybackVolume(ownerUid, kind);
+      if (currentVolume !== volume) track.setVolume(currentVolume);
       track.play();
     } else if (!isScreen) {
       window.playVideoInCard(ownerUid, track);
@@ -1586,7 +1592,10 @@ window.client.on("user-unpublished", (user, mediaType) => {
     if (tracks) delete tracks[mediaType];
     window.syncScreenShareCard(ownerUid);
   }
-  if (!isScreen && mediaType === "audio") window.clearSpeakingIndicator(ownerUid);
+  if (!isScreen && mediaType === "audio") {
+    remoteVoiceTracks.delete(String(ownerUid));
+    window.clearSpeakingIndicator(ownerUid);
+  }
   if (mediaType === "video") window.removeVideoFromCard(ownerUid);
 });
 
@@ -1616,9 +1625,10 @@ window.client.on("user-left", (user) => {
   const displayName = window.getDisplayName(user.uid);
   delete window.uidNameMap[user.uid];
   remoteVolumes.delete(String(user.uid));
+  remoteVoiceTracks.delete(String(user.uid));
   remotePreferenceNames.delete(String(user.uid));
   remoteScreenVolumes.delete(String(user.uid));
-  window._playTone(440, 0.2); // Lower tone = departure
+  if (!isDeafened) window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${displayName}** je otišao.`, "#fbbf24");
 
@@ -1643,7 +1653,7 @@ window.client.on("user-joined", async (user) => {
   window.drawUser(user.uid, name, icon, false);
   if (window.appendMessage)
     window.appendMessage("Sistem", `**${name}** se priključio.`, "#fbbf24");
-  if (user.uid !== window.client.uid) window._playTone(660, 0.1);
+  if (!isDeafened && user.uid !== window.client.uid) window._playTone(660, 0.1);
 });
 
 /**
@@ -1718,8 +1728,7 @@ window.client.on("connection-state-change", async (curState, prevState) => {
   }
 
   if (curState === "CONNECTED" && prevState === "RECONNECTING") {
-    s.innerText   = isMuted ? "Mutiran 🤐" : "Povezan • Live";
-    s.style.color = isMuted ? "#f87171"    : "#4ade80";
+    syncVoiceControls();
     if (window.appendMessage)
       console.log("Veza obnovljena, postavljanje statusa...");
       // window.appendMessage("Sistem", "Veza je obnovljena. ✅", "#4ade80");
@@ -1753,11 +1762,11 @@ window.createPreferredMicrophone = async () => {
     return track;
   }
 };
-let microphoneSwitchInFlight = false;
 window.switchMicrophone = async (deviceId) => {
   const track = localTracks.audioTrack;
   if (!window.isVoiceJoined || !track || microphoneSwitchInFlight || muteToggleInFlight) return false;
-  microphoneSwitchInFlight = true;
+  microphoneSwitchInFlight = track;
+  syncVoiceControls();
   try {
     // Switch the existing track so publishing and the mute state are preserved.
     await track.setDevice(deviceId || "default");
@@ -1768,7 +1777,8 @@ window.switchMicrophone = async (deviceId) => {
     console.warn("Microphone selection failed:", error);
     return false;
   } finally {
-    microphoneSwitchInFlight = false;
+    if (microphoneSwitchInFlight === track) microphoneSwitchInFlight = false;
+    if (localTracks.audioTrack === track) syncVoiceControls();
   }
 };
 
@@ -1831,9 +1841,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     const leaveBtn = document.getElementById("leave-btn");
     if (leaveBtn)  leaveBtn.style.display = "flex";
     if (screenBtn) screenBtn.style.display = "flex";
-
-    const s = document.getElementById("status");
-    if (s) { s.innerText = "Povezan • Live"; s.style.color = "#4ade80"; }
+    syncVoiceControls();
 
     if (window.innerWidth < 768) {
       window.chatContainer.classList.add("collapsed");
@@ -1844,6 +1852,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
     window.isVoiceJoined = false;
+    syncVoiceControls();
     window.hideAudioDevices?.();
     window.setWatchedScreen(null);
     clearAfkTimers();
@@ -1879,6 +1888,7 @@ async function leaveChannel(reason = "manual") {
   isLeavingChannel = true;
   try {
     window.isVoiceJoined = false;
+    syncVoiceControls();
     window.hideAudioDevices?.();
     window.setWatchedScreen(null);
     clearAfkTimers();
@@ -1913,6 +1923,12 @@ async function leaveChannel(reason = "manual") {
 
     // --- 5. RESET LOCAL STATE ---
     isMuted = false;
+    isDeafened = false;
+    mutedBeforeDeafen = false;
+    muteToggleInFlight = false;
+    microphoneSwitchInFlight = false;
+    remoteVoiceTracks.clear();
+    syncVoiceControls();
     speakingTimers.forEach((timer) => clearTimeout(timer));
     speakingTimers.clear();
     remoteVolumes.clear();
@@ -1968,17 +1984,79 @@ if (leaveBtn) leaveBtn.onclick = () => leaveChannel("manual");
 
 
 // ============================================================
-// MUTE TOGGLE
-// Enables/disables the local audio track without unpublishing it
+// VOICE CONTROLS
+// Deafen gates playback without overwriting individual volume preferences.
 // ============================================================
-let muteToggleInFlight = false;
-window.toggleMute = async () => {
-  if (!localTracks.audioTrack || muteToggleInFlight || microphoneSwitchInFlight) return;
+function syncVoiceControls() {
+  const joined = window.isVoiceJoined && !!localTracks.audioTrack;
+  const busy = !!(muteToggleInFlight || microphoneSwitchInFlight);
+  const mute = document.getElementById("mute-btn");
+  const deafen = document.getElementById("deafen-btn");
+  const row = document.getElementById("voice-controls-row");
+  if (row) {
+    row.hidden = !joined;
+    row.style.display = joined ? "flex" : "none";
+  }
+  for (const [button, pressed] of [[mute, isMuted], [deafen, isDeafened]]) {
+    if (!button) continue;
+    button.hidden = !joined;
+    button.style.display = joined ? "flex" : "none";
+    button.disabled = !joined || busy || (button === mute && isDeafened);
+    button.setAttribute("aria-pressed", String(pressed));
+    button.setAttribute("aria-busy", String(busy));
+  }
+  if (mute) {
+    mute.title = isDeafened ? "Prvo uključi zvuk da bi koristio mikrofon" : isMuted ? "Uključi mikrofon" : "Isključi mikrofon";
+    mute.setAttribute("aria-label", mute.title);
+  }
+  if (deafen) {
+    deafen.title = isDeafened
+      ? (mutedBeforeDeafen ? "Uključi zvuk; mikrofon ostaje isključen" : "Uključi zvuk i mikrofon")
+      : "Isključi zvuk i mikrofon";
+    deafen.setAttribute("aria-label", deafen.title);
+  }
+  const muteLabel = document.getElementById("mute-label");
+  const deafenLabel = document.getElementById("deafen-label");
+  if (muteLabel) muteLabel.textContent = isMuted ? "Mutiran" : "Mikrofon";
+  if (deafenLabel) deafenLabel.textContent = isDeafened ? "Utišan" : "Zvuk";
+  if (!joined) return;
+  window.setUserMuted?.(window.client.uid, isMuted);
+  const status = document.getElementById("status");
+  if (status) {
+    status.innerText = isDeafened ? "Zvuk i mikrofon isključeni" : isMuted ? "Mikrofon isključen" : "Povezan • Live";
+    status.style.color = isMuted ? "#f87171" : "#4ade80";
+  }
+}
+
+function getPlaybackVolume(uid, kind = "voice") {
+  if (isDeafened || (kind === "screen" && watchedScreenUid !== String(uid))) return 0;
+  return window.getRemoteVolume(uid, kind);
+}
+
+function applyIncomingVolumes() {
+  const voiceTracks = new Map(remoteVoiceTracks);
+  for (const user of window.client.remoteUsers) {
+    if (!window.isScreenShareUid(user.uid) && user.audioTrack && !voiceTracks.has(String(user.uid))) {
+      voiceTracks.set(String(user.uid), user.audioTrack);
+    }
+  }
+  for (const [uid, track] of voiceTracks) track.setVolume(getPlaybackVolume(uid));
+  for (const [uid, tracks] of remoteScreenTracks) tracks.audio?.setVolume(getPlaybackVolume(uid, "screen"));
+}
+
+async function changeVoiceState(muted, deafened) {
+  if (!window.isVoiceJoined || !localTracks.audioTrack || muteToggleInFlight || microphoneSwitchInFlight) return;
   const audioTrack = localTracks.audioTrack;
   const uid = window.client.uid;
-  muteToggleInFlight = true;
+  muteToggleInFlight = audioTrack;
   const wasMuted = isMuted;
-  isMuted = !wasMuted;
+  const wasDeafened = isDeafened;
+  const previousMic = mutedBeforeDeafen;
+  if (deafened && !wasDeafened) mutedBeforeDeafen = wasMuted;
+  isMuted = muted;
+  isDeafened = deafened;
+  syncVoiceControls();
+  applyIncomingVolumes();
 
   if (isMuted) {
     stopLocalVolumeMonitor();
@@ -1987,15 +2065,20 @@ window.toggleMute = async () => {
 
   try {
     // setEnabled(false) disables microphone publishing without destroying it.
-    await audioTrack.setEnabled(!isMuted);
+    if (isMuted !== wasMuted) await audioTrack.setEnabled(!isMuted);
   } catch (error) {
     if (localTracks.audioTrack !== audioTrack) return;
     isMuted = wasMuted;
+    isDeafened = wasDeafened;
+    mutedBeforeDeafen = previousMic;
+    applyIncomingVolumes();
     if (!isMuted && localTracks.audioTrack) startLocalVolumeMonitor(localTracks.audioTrack);
     console.error("Microphone mute change failed:", error);
+    window.appendMessage?.("Sistem", "Promena zvuka nije uspela. Pokušaj ponovo.", "#ef4444");
     return;
   } finally {
-    muteToggleInFlight = false;
+    if (muteToggleInFlight === audioTrack) muteToggleInFlight = false;
+    if (localTracks.audioTrack === audioTrack) syncVoiceControls();
   }
   // A user can leave while the SDK is toggling capture. Do not restore the
   // old call's UI or write presence under an undefined/new participant UID.
@@ -2006,20 +2089,20 @@ window.toggleMute = async () => {
   }
 
   // Update mute state in Firebase so remote users can see it in their UI
-  firebase.database()
+  Promise.resolve(firebase.database()
   .ref(`presence/${window.CHANNEL}/${uid}`)
-  .update({ muted: isMuted });
+  .update({ muted: isMuted })).catch(error => console.warn("Mute presence update failed:", error));
+}
 
-  // Visually dim the local avatar when muted
-  window.setUserMuted(window.client.uid, isMuted);
-
-  // Reflect mute state in the header status text
-  const s = document.getElementById("status");
-  if (s) {
-    s.innerText    = isMuted ? "Mutiran 🤐" : "Povezan • Live";
-    s.style.color  = isMuted ? "#f87171"    : "#4ade80";
-  }
+window.toggleMute = () => {
+  if (isDeafened) return;
+  return changeVoiceState(!isMuted, false);
 };
+window.toggleDeafen = () => changeVoiceState(isDeafened ? mutedBeforeDeafen : true, !isDeafened);
+const muteBtn = document.getElementById("mute-btn");
+const deafenBtn = document.getElementById("deafen-btn");
+if (muteBtn) muteBtn.onclick = () => window.toggleMute();
+if (deafenBtn) deafenBtn.onclick = () => window.toggleDeafen();
 
 // ============================================================
 // VOLUME ADJUSTMENT
@@ -2029,8 +2112,8 @@ window.adjustVolume = (uid, vol) => {
   const volume = Math.max(0, Math.min(100, Number.parseInt(vol, 10) || 0));
   remoteVolumes.set(String(uid), volume);
   window.browserPreferences?.saveVolume(window.uidNameMap[uid], "voice", volume);
-  const user = window.client.remoteUsers.find((u) => u.uid == uid);
-  if (user?.audioTrack) user.audioTrack.setVolume(volume);
+  const track = remoteVoiceTracks.get(String(uid)) || window.client.remoteUsers.find((u) => u.uid == uid)?.audioTrack;
+  track?.setVolume(getPlaybackVolume(uid));
 };
 
 window.getRemoteVolume = (uid, kind = "voice") => {
@@ -2051,17 +2134,16 @@ window.restoreParticipantVolume = (uid, name) => {
       window.browserPreferences?.saveVolume(name, kind, volumes.get(String(uid)));
     }
   }
-  const user = window.client.remoteUsers.find((u) => String(u.uid) === String(uid));
-  user?.audioTrack?.setVolume(window.getRemoteVolume(uid));
-  remoteScreenTracks.get(String(uid))?.audio?.setVolume(
-    watchedScreenUid === String(uid) ? window.getRemoteVolume(uid, "screen") : 0);
+  const track = remoteVoiceTracks.get(String(uid)) || window.client.remoteUsers.find((u) => String(u.uid) === String(uid))?.audioTrack;
+  track?.setVolume(getPlaybackVolume(uid));
+  remoteScreenTracks.get(String(uid))?.audio?.setVolume(getPlaybackVolume(uid, "screen"));
 };
 
 window.adjustScreenVolume = (uid, vol) => {
   const volume = Math.max(0, Math.min(100, Number.parseInt(vol, 10) || 0));
   remoteScreenVolumes.set(String(uid), volume);
   window.browserPreferences?.saveVolume(window.uidNameMap[uid], "screen", volume);
-  remoteScreenTracks.get(String(uid))?.audio?.setVolume(watchedScreenUid === String(uid) ? volume : 0);
+  remoteScreenTracks.get(String(uid))?.audio?.setVolume(getPlaybackVolume(uid, "screen"));
 };
 
 // Read-only diagnostics for cross-browser screen-share troubleshooting.
@@ -3517,17 +3599,6 @@ if (emojiBtn && emojiPicker) {
     }
   });
 }
-
-// ============================================================
-// GLOBAL KEYBOARD SHORTCUT
-// Tab focuses the chat input from anywhere on the page
-// ============================================================
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Tab" && document.activeElement !== chatInput) {
-    e.preventDefault();
-    chatInput.focus();
-  }
-});
 
 // ============================================================
 // EMOJI INSERTER
