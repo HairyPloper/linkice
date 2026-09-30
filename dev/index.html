@@ -22,7 +22,7 @@
     <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.24.8.js"></script>
 
     <!-- Main stylesheet -->
-    <link rel="stylesheet" href="css/style.css?v=space-glass-4" />
+    <link rel="stylesheet" href="css/style.css?v=chat-status-3" />
 
     <!-- PWA manifest for installability and metadata --> 
     <link rel="manifest" href="./manifest.json?v=4">
@@ -141,7 +141,13 @@
 
       <!-- Chat header: toggle buttons, settings, drag handle -->
       <div id="chat-header">
-        <span id="space-name"></span>
+        <div class="chat-heading">
+          <span id="space-name"></span>
+          <div class="chat-connection">
+            <span id="chat-connection-status" role="status" data-state="connecting">Chat se povezuje…</span>
+            <button id="chat-reconnect-btn" type="button" hidden>Poveži ponovo</button>
+          </div>
+        </div>
         <span id="unread-badge" class="hidden">0</span>
         <!-- Toggle background music on/off -->
         <button
@@ -277,6 +283,8 @@
           type="text"
           id="chat-input"
           placeholder="Tekst..."
+          aria-label="Poruka"
+          aria-describedby="chat-draft-status"
           autocomplete="off"
         />
 
@@ -300,8 +308,9 @@
         </div>
 
         <!-- Send message button -->
-        <button id="send-btn">💬</button>
+        <button id="send-btn" type="button" aria-label="Pošalji poruku">💬</button>
       </div>
+      <div id="chat-draft-status" role="status"></div>
     </div>
     <!-- ============================================================
          WHITEBOARD
@@ -404,6 +413,6 @@
          APPLICATION SCRIPTS
          Load order matters: main → utils → ui → rtc → chat -> whiteboard → notifications
          ============================================================ -->
-    <script src="js/bundle.min.js?v=d073c5be319add56e9c03a7d91a156e6a0f3cc84"></script>
+    <script src="js/bundle.min.js?v=007d0e5e7363c64f033582e40e6021bd6d9884f7"></script>
   </body>
 </html>
