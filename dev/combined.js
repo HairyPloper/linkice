@@ -379,10 +379,95 @@ window.supportsSpeakerSelection = () =>
   typeof HTMLMediaElement !== "undefined" &&
   typeof HTMLMediaElement.prototype.setSinkId === "function";
 
+const audioDevicePreferences = new Map();
+window.readAudioDevice = (kind) => {
+  if (audioDevicePreferences.has(kind)) return audioDevicePreferences.get(kind);
+  try { return localStorage.getItem(`${kind}-device`) || "default"; }
+  catch { return "default"; }
+};
+window.saveAudioDevice = (kind, deviceId) => {
+  audioDevicePreferences.set(kind, deviceId);
+  try { localStorage.setItem(`${kind}-device`, deviceId); }
+  catch { /* Device selection still works for this call without storage. */ }
+};
+window.showAudioDeviceStatus = (message = window.isVoiceJoined && !window.supportsSpeakerSelection()
+  ? "Za izbor zvučnika koristi podešavanja uređaja ili desktop Chrome/Edge." : "") => {
+  const status = document.getElementById("audio-device-status");
+  if (status) status.textContent = message;
+};
+let selectedSpeaker = window.readAudioDevice("speaker");
+window.getSpeakerDevice = () => selectedSpeaker;
+
+function populateAudioDevices(select, devices, selected, fallbackLabel) {
+  select.options.length = 1;
+  const seen = new Set(["default"]);
+  for (const device of devices) {
+    if (!device.deviceId || seen.has(device.deviceId)) continue;
+    seen.add(device.deviceId);
+    const opt = document.createElement("option");
+    opt.value = device.deviceId;
+    opt.text = device.label || `${fallbackLabel} ${select.options.length}`;
+    select.appendChild(opt);
+  }
+  select.value = seen.has(selected) ? selected : "default";
+}
+
+let audioDevicesGeneration = 0;
+window.hideAudioDevices = () => {
+  audioDevicesGeneration++;
+  selectedSpeaker = window.readAudioDevice("speaker");
+  for (const id of ["microphone-select", "microphone-label", "speaker-select", "speaker-label", "speaker-hr"]) {
+    const element = document.getElementById(id);
+    if (element) element.style.display = "none";
+  }
+  window.showAudioDeviceStatus("Izbor uređaja je dostupan nakon povezivanja.");
+};
+
+async function loadMicrophones() {
+  const generation = audioDevicesGeneration;
+  const track = window.getMicrophoneTrack?.();
+  if (!window.isVoiceJoined || !track) return;
+  try {
+    const devices = await AgoraRTC.getMicrophones(true);
+    if (!window.isVoiceJoined || generation !== audioDevicesGeneration || track !== window.getMicrophoneTrack()) return;
+    const select = document.getElementById("microphone-select");
+    if (!select || !devices.length || select.disabled) return;
+    const saved = window.readAudioDevice("microphone");
+    const actual = track.getMediaStreamTrack?.().getSettings?.().deviceId;
+    populateAudioDevices(select, devices, saved === "default" ? "default" : actual || saved, "Mikrofon");
+    let selectedMicrophone = select.value;
+    select.onchange = async () => {
+      const previous = selectedMicrophone;
+      const deviceId = select.value;
+      select.disabled = true;
+      try {
+        const target = deviceId === "default" && !devices.some(device => device.deviceId === "default")
+          ? devices[0].deviceId : deviceId;
+        if (!await window.switchMicrophone(target)) throw new Error("Microphone switch failed");
+        if (generation !== audioDevicesGeneration) return;
+        selectedMicrophone = deviceId;
+        window.saveAudioDevice("microphone", deviceId);
+        window.showAudioDeviceStatus();
+      } catch (error) {
+        if (generation !== audioDevicesGeneration) return;
+        select.value = previous;
+        window.showAudioDeviceStatus("Promena mikrofona nije uspela. Pokušaj ponovo.");
+      } finally {
+        select.disabled = false;
+      }
+    };
+    select.style.display = "block";
+    document.getElementById("microphone-label").style.display = "block";
+  } catch (error) {
+    console.warn("Microphone enumeration unavailable:", error);
+  }
+}
+
 async function loadSpeakers() {
   // Run after successful join, not concurrently with microphone acquisition.
   // Agora does not support output switching on Firefox or Safari.
   if (!window.supportsSpeakerSelection()) return;
+  const generation = audioDevicesGeneration;
   let devices;
   try {
     devices = await AgoraRTC.getPlaybackDevices(true);
@@ -390,31 +475,50 @@ async function loadSpeakers() {
     console.warn("Speaker enumeration unavailable:", error);
     return;
   }
-  if (!window.isVoiceJoined) return;
+  if (!window.isVoiceJoined || generation !== audioDevicesGeneration) return;
   if (!devices.length) return;
 
   const select = document.getElementById("speaker-select");
+  if (!select || select.disabled) return;
+  populateAudioDevices(select, devices, selectedSpeaker, "Zvučnik");
+  selectedSpeaker = select.value;
+  select.disabled = true;
+  try {
+    const applied = await window.applySpeakerDevice?.(selectedSpeaker);
+    if (generation !== audioDevicesGeneration) return;
+    if (applied === false) {
+      selectedSpeaker = select.value = "default";
+      const fallback = await window.applySpeakerDevice?.("default");
+      if (generation !== audioDevicesGeneration) return;
+      window.showAudioDeviceStatus(fallback === false
+        ? "Promena zvučnika nije uspela. Proveri audio podešavanja."
+        : "Sačuvani zvučnik nije dostupan. Koristi se podrazumevani izlaz.");
+    }
+    window.saveAudioDevice("speaker", selectedSpeaker);
+  } finally {
+    select.disabled = false;
+  }
+  if (!window.isVoiceJoined || generation !== audioDevicesGeneration) return;
 
-  // Clear existing options except default
-  select.options.length = 1;
-
-  devices.forEach(device => {
-    const opt = document.createElement("option");
-    opt.value = device.deviceId;
-    opt.text  = device.label || `Zvučnik ${select.options.length}`;
-    select.appendChild(opt);
-  });
-
-  // Restore saved selection
-  const saved = localStorage.getItem("speaker-device");
-  if (saved && devices.some((device) => device.deviceId === saved)) select.value = saved;
-
-  select.onchange = (e) => {
-    const deviceId = e.target.value;
-    localStorage.setItem("speaker-device", deviceId);
-    window.client.remoteUsers.forEach(user => {
-      if (user.audioTrack) void window.setRemotePlaybackDevice(user.audioTrack, deviceId);
-    });
+  select.onchange = async () => {
+    const previous = selectedSpeaker;
+    selectedSpeaker = select.value;
+    select.disabled = true;
+    try {
+      const applied = await window.applySpeakerDevice(selectedSpeaker);
+      if (generation !== audioDevicesGeneration) return;
+      if (!applied) {
+        selectedSpeaker = select.value = previous;
+        await window.applySpeakerDevice(previous);
+        if (generation !== audioDevicesGeneration) return;
+        window.showAudioDeviceStatus("Promena zvučnika nije uspela. Pokušaj ponovo.");
+        return;
+      }
+      window.saveAudioDevice("speaker", selectedSpeaker);
+      window.showAudioDeviceStatus();
+    } finally {
+      select.disabled = false;
+    }
   };
 
   // Show the elements
@@ -422,6 +526,15 @@ async function loadSpeakers() {
   document.getElementById("speaker-label").style.display = "block";
   select.style.display = "block";
 }
+
+window.loadAudioDevices = async () => {
+  window.showAudioDeviceStatus(window.supportsSpeakerSelection()
+    ? "" : "Za izbor zvučnika koristi podešavanja uređaja ili desktop Chrome/Edge.");
+  await Promise.all([loadMicrophones(), loadSpeakers()]);
+};
+navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+  if (window.isVoiceJoined) void window.loadAudioDevices();
+});
 /**
  * js/utils.js
  * Shared utility functions used across the app.
@@ -458,6 +571,31 @@ window.sanitizeForAgora = (name) => {
 // Falls back to a plain string conversion for numeric UIDs (remote users).
 // e.g. "Marko_4271" → "Marko"  |  12345678 → "12345678"
 // ============================================================
+// Preferences are optional: blocked storage or malformed values must not break UI.
+window.browserPreferences = {
+  read(key) {
+    try { return JSON.parse(localStorage.getItem(`linkice:${key}`)); }
+    catch { return null; }
+  },
+  write(key, value) {
+    try { localStorage.setItem(`linkice:${key}`, JSON.stringify(value)); }
+    catch { /* Keep the current session usable when storage is unavailable. */ }
+  },
+  nameKey(name) {
+    return typeof name === "string" ? name.normalize("NFC").trim().toLowerCase() : "";
+  },
+  volume(name, kind) {
+    const key = this.nameKey(name);
+    const value = key ? this.read(`volume:${encodeURIComponent(key)}:${kind}`) : null;
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100
+      ? value : null;
+  },
+  saveVolume(name, kind, value) {
+    const key = this.nameKey(name);
+    if (key) this.write(`volume:${encodeURIComponent(key)}:${kind}`, value);
+  },
+};
+
 window.uidNameMap = {};
 window.getDisplayName = (uid) => {
   return window.uidNameMap[uid] || String(uid);
@@ -531,7 +669,8 @@ window.escapeHtml = (str) => {
     .replace(/>/g,  "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g,  "&#39;");
-};/**
+};
+/**
  * js/ui.js
  * User interface logic — video background, background music,
  */
@@ -637,6 +776,7 @@ if (audioBtn && audio) {
 // was created with a raw numeric UID before the Firebase lookup completed.
 // ============================================================
 window.drawUser = (uid, username, icon, isMe = false) => {
+  if (!isMe) window.restoreParticipantVolume?.(uid, username);
   const existing = document.getElementById(`user-${uid}`);
   if (existing) {
     // Card already exists — just patch the name label and bail out.
@@ -652,6 +792,10 @@ window.drawUser = (uid, username, icon, isMe = false) => {
       avatarEl.classList.toggle("paired-icon", !window.animals.includes(icon));
     }
     window.syncScreenShareCard?.(uid);
+    const slider = existing.querySelector(".voice-volume-row input");
+    const output = existing.querySelector(".voice-volume-row output");
+    if (slider) slider.value = window.getRemoteVolume?.(uid) ?? 100;
+    if (output && slider) output.textContent = `${slider.value}%`;
     return;
   }
 
@@ -967,7 +1111,7 @@ window.setWatchedScreen = (uid) => {
   watchedScreenUid = uid == null ? null : String(uid);
   for (const [owner, tracks] of remoteScreenTracks) {
     tracks.audio?.setVolume(owner === watchedScreenUid
-      ? (remoteScreenVolumes.get(owner) ?? DEFAULT_SCREEN_VOLUME) : 0);
+      ? window.getRemoteVolume(owner, "screen") : 0);
   }
 };
 
@@ -984,6 +1128,7 @@ window.getVoiceParticipantCount = () => window.isVoiceJoined
 
 // Keep the UI volume stable when Agora republishes/replaces a remote track.
 const remoteVolumes = new Map();
+const remotePreferenceNames = new Map();
 
 // Agora 4.24 uses a normalized logarithmic level, not the old weighted FFT
 // level. Its documented speech thresholds are 0.6 locally and 60 remotely.
@@ -1341,13 +1486,26 @@ window.syncScreenShareCard = (uid) => {
 // AGORA EVENT LISTENERS
 // ============================================================
 
-window.setRemotePlaybackDevice = async (track, deviceId) => {
-  if (window.supportsSpeakerSelection?.() === false) return;
-  try {
-    await track.setPlaybackDevice(deviceId);
-  } catch (error) {
-    console.warn("Speaker selection failed:", error);
-  }
+const playbackDeviceChanges = new WeakMap();
+window.setRemotePlaybackDevice = (track, deviceId) => {
+  if (window.supportsSpeakerSelection?.() === false) return Promise.resolve(false);
+  const change = (playbackDeviceChanges.get(track) || Promise.resolve()).then(async () => {
+    try {
+      await track.setPlaybackDevice(deviceId || "default");
+      return true;
+    } catch (error) {
+      console.warn("Speaker selection failed:", error);
+      return false;
+    }
+  });
+  playbackDeviceChanges.set(track, change);
+  return change;
+};
+window.applySpeakerDevice = async (deviceId) => {
+  const tracks = new Set(window.client.remoteUsers.map(user => user.audioTrack).filter(Boolean));
+  for (const remote of remoteScreenTracks.values()) if (remote.audio) tracks.add(remote.audio);
+  const results = await Promise.all([...tracks].map(track => window.setRemotePlaybackDevice(track, deviceId)));
+  return results.every(Boolean);
 };
 
 /**
@@ -1384,15 +1542,25 @@ window.client.on("user-published", async (user, mediaType) => {
     }
     if (mediaType === "audio") {
       const volume = isScreen
-        ? (watchedScreenUid === String(ownerUid) ? (remoteScreenVolumes.get(String(ownerUid)) ?? DEFAULT_SCREEN_VOLUME) : 0)
-        : (remoteVolumes.get(String(ownerUid)) ?? 100);
+        ? (watchedScreenUid === String(ownerUid) ? window.getRemoteVolume(ownerUid, "screen") : 0)
+        : window.getRemoteVolume(ownerUid);
       track.setVolume(volume);
-      const device = localStorage.getItem("speaker-device");
+      let device = window.getSpeakerDevice?.();
+      if (!device) {
+        try { device = localStorage.getItem("speaker-device") || "default"; }
+        catch { device = "default"; }
+      }
       if (device && track.setPlaybackDevice) {
         // Firefox does not support selecting an output device in Agora. A
         // rejected device change must not interrupt playback or screen UI.
-        void window.setRemotePlaybackDevice(track, device);
+        const applied = await window.setRemotePlaybackDevice(track, device);
+        if (!isCurrent()) return;
+        if (!applied && device !== "default" && window.supportsSpeakerSelection?.() !== false) {
+          await window.setRemotePlaybackDevice(track, "default");
+          window.showAudioDeviceStatus?.("Izabrani zvučnik nije dostupan. Proveri audio podešavanja.");
+        }
       }
+      if (!isCurrent()) return;
       track.play();
     } else if (!isScreen) {
       window.playVideoInCard(ownerUid, track);
@@ -1448,6 +1616,7 @@ window.client.on("user-left", (user) => {
   const displayName = window.getDisplayName(user.uid);
   delete window.uidNameMap[user.uid];
   remoteVolumes.delete(String(user.uid));
+  remotePreferenceNames.delete(String(user.uid));
   remoteScreenVolumes.delete(String(user.uid));
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
@@ -1563,6 +1732,46 @@ window.client.on("connection-state-change", async (curState, prevState) => {
 // ============================================================
 const joinBtn = document.getElementById("join-btn");
 
+window.getMicrophoneTrack = () => localTracks.audioTrack;
+window.createPreferredMicrophone = async () => {
+  const options = {
+    AEC: window.audioSettings?.aec !== false,
+    AGC: window.audioSettings?.agc !== false,
+    ANS: window.audioSettings?.ans !== false,
+  };
+  const microphoneId = window.readAudioDevice?.("microphone") || "default";
+  try {
+    return await AgoraRTC.createMicrophoneAudioTrack({
+      ...options, ...(microphoneId !== "default" ? { microphoneId } : {}),
+    });
+  } catch (error) {
+    // A removed device must not prevent joining; permission errors still surface.
+    if (microphoneId === "default" || !/DEVICE_NOT_FOUND|CONSTRAINT_NOT_SATISFIED|NotFoundError|OverconstrainedError/.test(`${error.code} ${error.name}`)) throw error;
+    const track = await AgoraRTC.createMicrophoneAudioTrack(options);
+    window.saveAudioDevice?.("microphone", "default");
+    window.appendMessage?.("Sistem", "Sačuvani mikrofon nije dostupan. Koristi se podrazumevani mikrofon.", "#fbbf24");
+    return track;
+  }
+};
+let microphoneSwitchInFlight = false;
+window.switchMicrophone = async (deviceId) => {
+  const track = localTracks.audioTrack;
+  if (!window.isVoiceJoined || !track || microphoneSwitchInFlight || muteToggleInFlight) return false;
+  microphoneSwitchInFlight = true;
+  try {
+    // Switch the existing track so publishing and the mute state are preserved.
+    await track.setDevice(deviceId || "default");
+    if (localTracks.audioTrack !== track) return false;
+    if (!isMuted) startLocalVolumeMonitor(track);
+    return true;
+  } catch (error) {
+    console.warn("Microphone selection failed:", error);
+    return false;
+  } finally {
+    microphoneSwitchInFlight = false;
+  }
+};
+
 if (joinBtn) joinBtn.onclick = async () => {
   const btn = joinBtn;
   btn.disabled = true;
@@ -1571,11 +1780,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     // --- 1. ACQUIRE MICROPHONE ---
     let audioTrack;
     try {
-      audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-        AEC: window.audioSettings?.aec !== false,
-        AGC: window.audioSettings?.agc !== false,
-        ANS: window.audioSettings?.ans !== false,
-      });
+      audioTrack = await window.createPreferredMicrophone();
     } catch (micErr) {
       console.error("Mikrofon nije dostupan:", micErr);
 
@@ -1610,7 +1815,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     await window.client.publish(localTracks.audioTrack);
     window.isVoiceJoined = true;
     startAfkTimer();
-    void window.loadSpeakers?.();
+    void window.loadAudioDevices?.();
 
     // --- 5. PRESENCE IDENTITY IS NOW MARKED AS VOICE-JOINED ---
     window.uidNameMap[window.client.uid] = window.myDisplayName;
@@ -1639,6 +1844,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
     window.isVoiceJoined = false;
+    window.hideAudioDevices?.();
     window.setWatchedScreen(null);
     clearAfkTimers();
     stopLocalVolumeMonitor();
@@ -1673,6 +1879,7 @@ async function leaveChannel(reason = "manual") {
   isLeavingChannel = true;
   try {
     window.isVoiceJoined = false;
+    window.hideAudioDevices?.();
     window.setWatchedScreen(null);
     clearAfkTimers();
 
@@ -1709,6 +1916,7 @@ async function leaveChannel(reason = "manual") {
     speakingTimers.forEach((timer) => clearTimeout(timer));
     speakingTimers.clear();
     remoteVolumes.clear();
+    remotePreferenceNames.clear();
     remoteScreenVolumes.clear();
     for (const uid of remoteScreenTracks.keys()) {
       window.removeVideoFromCard(uid);
@@ -1765,7 +1973,7 @@ if (leaveBtn) leaveBtn.onclick = () => leaveChannel("manual");
 // ============================================================
 let muteToggleInFlight = false;
 window.toggleMute = async () => {
-  if (!localTracks.audioTrack || muteToggleInFlight) return;
+  if (!localTracks.audioTrack || muteToggleInFlight || microphoneSwitchInFlight) return;
   const audioTrack = localTracks.audioTrack;
   const uid = window.client.uid;
   muteToggleInFlight = true;
@@ -1820,17 +2028,39 @@ window.toggleMute = async () => {
 window.adjustVolume = (uid, vol) => {
   const volume = Math.max(0, Math.min(100, Number.parseInt(vol, 10) || 0));
   remoteVolumes.set(String(uid), volume);
+  window.browserPreferences?.saveVolume(window.uidNameMap[uid], "voice", volume);
   const user = window.client.remoteUsers.find((u) => u.uid == uid);
   if (user?.audioTrack) user.audioTrack.setVolume(volume);
 };
 
-window.getRemoteVolume = (uid, kind = "voice") => kind === "screen"
-  ? (remoteScreenVolumes.get(String(uid)) ?? DEFAULT_SCREEN_VOLUME)
-  : (remoteVolumes.get(String(uid)) ?? 100);
+window.getRemoteVolume = (uid, kind = "voice") => {
+  const volumes = kind === "screen" ? remoteScreenVolumes : remoteVolumes;
+  return volumes.get(String(uid))
+    ?? window.browserPreferences?.volume(window.uidNameMap?.[uid], kind)
+    ?? (kind === "screen" ? DEFAULT_SCREEN_VOLUME : 100);
+};
+
+// Presence can arrive after the media track. Apply the preference then too.
+window.restoreParticipantVolume = (uid, name) => {
+  const previousName = remotePreferenceNames.get(String(uid));
+  remotePreferenceNames.set(String(uid), name);
+  window.uidNameMap[uid] = name;
+  for (const [kind, volumes] of [["voice", remoteVolumes], ["screen", remoteScreenVolumes]]) {
+    if (previousName && previousName !== name) volumes.delete(String(uid));
+    if (!previousName && volumes.has(String(uid))) {
+      window.browserPreferences?.saveVolume(name, kind, volumes.get(String(uid)));
+    }
+  }
+  const user = window.client.remoteUsers.find((u) => String(u.uid) === String(uid));
+  user?.audioTrack?.setVolume(window.getRemoteVolume(uid));
+  remoteScreenTracks.get(String(uid))?.audio?.setVolume(
+    watchedScreenUid === String(uid) ? window.getRemoteVolume(uid, "screen") : 0);
+};
 
 window.adjustScreenVolume = (uid, vol) => {
   const volume = Math.max(0, Math.min(100, Number.parseInt(vol, 10) || 0));
   remoteScreenVolumes.set(String(uid), volume);
+  window.browserPreferences?.saveVolume(window.uidNameMap[uid], "screen", volume);
   remoteScreenTracks.get(String(uid))?.audio?.setVolume(watchedScreenUid === String(uid) ? volume : 0);
 };
 
@@ -3209,9 +3439,33 @@ window.addEmoji = (emoji) => {
 // ============================================================
 if (chatContainer && dragHandle) {
   let x = 0, y = 0, initialX = 0, initialY = 0, isDragging = false;
+  const savedLayout = window.browserPreferences?.read("chat-layout");
+  let position = savedLayout && Number.isFinite(savedLayout.left) && Number.isFinite(savedLayout.top)
+    ? { left: savedLayout.left, top: savedLayout.top } : null;
+  const saveLayout = () => window.browserPreferences?.write("chat-layout", {
+    ...position,
+    collapsed: chatContainer.classList.contains("collapsed"),
+  });
+  const applyPosition = () => {
+    // Mobile has a dedicated full-width layout; retain the desktop position.
+    if (!position || window.innerWidth <= 767) return;
+    const left = Math.max(0, Math.min(position.left, window.innerWidth - chatContainer.offsetWidth));
+    const top = Math.max(0, Math.min(position.top, window.innerHeight - chatContainer.offsetHeight));
+    chatContainer.style.left = `${left}px`;
+    chatContainer.style.top = `${top}px`;
+    chatContainer.style.bottom = "auto";
+    chatContainer.style.right = "auto";
+  };
+  if (typeof savedLayout?.collapsed === "boolean") {
+    chatContainer.classList.toggle("collapsed", savedLayout.collapsed);
+    settingsBtn?.classList.toggle("hidden", savedLayout.collapsed);
+  }
+  applyPosition();
+  window.addEventListener("resize", applyPosition);
 
   dragHandle.onmousedown = (e) => {
     if (e.button !== 0) return; // Left-click only
+    if (window.innerWidth <= 767) return;
 
     isDragging = false;
     initialX   = e.clientX;
@@ -3225,14 +3479,17 @@ if (chatContainer && dragHandle) {
       initialY = e.clientY;
 
       // Move the panel by the delta, clearing right/bottom anchors
-      chatContainer.style.top   = chatContainer.offsetTop  - y + "px";
-      chatContainer.style.left  = chatContainer.offsetLeft - x + "px";
-      chatContainer.style.bottom = "auto";
-      chatContainer.style.right  = "auto";
+      position = { top: chatContainer.offsetTop - y, left: chatContainer.offsetLeft - x };
+      applyPosition();
     };
 
     document.onmouseup = () => {
       document.onmousemove = null;
+      document.onmouseup = null;
+      if (isDragging) {
+        position = { top: chatContainer.offsetTop, left: chatContainer.offsetLeft };
+        saveLayout();
+      }
     };
   };
 
@@ -3241,6 +3498,8 @@ if (chatContainer && dragHandle) {
     if (!isDragging) {
       chatContainer.classList.toggle("collapsed");
       settingsBtn.classList.toggle("hidden");
+      applyPosition();
+      saveLayout();
 
       // Clear badge when opening chat
       if (!chatContainer.classList.contains("collapsed")) {
