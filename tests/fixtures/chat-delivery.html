@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="sr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat delivery check</title>
+<link rel="stylesheet" href="../../css/style.css">
+<style>
+body { background: #0b1020; }
+#checks { position: fixed; top: 24px; left: 24px; width: 290px; color: white; font: 14px system-ui; }
+#checks button { padding: 8px; margin: 4px; }
+#fixture-status { display: block; margin: 12px 0; }
+@media (max-width: 767px) { #checks { position: static; width: auto; margin: 12px; } #chat-container { top: 330px !important; height: calc(100dvh - 350px) !important; } }
+</style>
+<aside id="checks">
+  <h1>Chat delivery test</h1>
+  <p>Simulated connection and writes. No network writes.</p>
+  <button id="fixture-connect">Connect chat</button>
+  <button id="fixture-offline">Disconnect chat</button>
+  <button id="fixture-fail">Fail next send</button>
+  <button id="fixture-ack">Acknowledge sends</button>
+  <button id="fixture-denied">Deny chat access</button>
+  <span id="fixture-status">0 pending writes</span>
+</aside>
+<div id="chat-container">
+  <div id="chat-header">
+    <div class="chat-heading"><span id="space-name">Space: delivery-check</span>
+      <div class="chat-connection"><span id="chat-connection-status" role="status">Chat se povezuje…</span><button id="chat-reconnect-btn" hidden>Poveži ponovo</button></div>
+    </div>
+    <span id="unread-badge" class="hidden">0</span>
+    <button class="video-toggle" title="Muzika">🎵</button><button class="video-toggle" title="Video">🎬</button>
+    <button id="settings-btn" title="Postavke">⋮</button><button id="chat-drag-handle" title="Sklopi chat">↕</button>
+  </div>
+  <div id="settings-menu" class="hidden"></div>
+  <div id="chat-history-controls" hidden><button id="load-older-messages">Učitaj starije poruke</button><span id="chat-history-status" role="status"></span></div>
+  <div id="chat-messages" tabindex="0" aria-label="Chat messages"></div>
+  <div id="autocomplete-menu" style="display:none"></div>
+  <div class="chat-input-wrapper"><input id="chat-input" aria-label="Poruka" placeholder="Tekst..." aria-describedby="chat-draft-status"><button id="send-btn" aria-label="Pošalji poruku">💬</button></div>
+  <div id="chat-draft-status" role="status"></div>
+</div>
+<script src="../helpers/chat-history.js"></script>
+<script>
+const fixtureBackend = createChatHistorySource(2);
+const fixturePending = [];
+const fixtureServerKey = 'linkice.fixture.delivery-server';
+const fixtureSaved = JSON.parse(sessionStorage.getItem(fixtureServerKey) || '{}');
+for (const [key, data] of Object.entries(fixtureSaved)) fixtureBackend.records.push({ key, data });
+let fixtureConnected = false, fixtureFail = false, fixtureConnectionListener;
+const fixtureStatus = () => { document.getElementById('fixture-status').textContent = `${fixturePending.length} pending writes · ${Object.keys(fixtureSaved).length} saved messages`; };
+const fixtureConnection = value => { fixtureConnected = value; fixtureConnectionListener?.({ val: () => value }); };
+fixtureBackend.ref.push = () => ({ key: `-outgoing-${crypto.randomUUID()}` });
+fixtureBackend.ref.child = key => ({ transaction(update) {
+  if (fixtureFail) { fixtureFail = false; return Promise.reject(Error('Simulated write denied')); }
+  return new Promise(resolve => {
+    fixturePending.push(() => {
+      const value = update(fixtureSaved[key] || null);
+      if (value !== undefined) {
+        fixtureSaved[key] = { ...value, timestamp: Date.now() };
+        sessionStorage.setItem(fixtureServerKey, JSON.stringify(fixtureSaved));
+        fixtureBackend.add(fixtureSaved[key], key);
+      }
+      resolve({ committed: value !== undefined, snapshot: { exists: () => !!fixtureSaved[key], val: () => fixtureSaved[key] } });
+    });
+    fixtureStatus();
+  });
+} });
+Object.assign(window, { CHANNEL: 'delivery-fixture', myAgoraUID: 42, myDisplayName: 'Me', uidNameMap: {},
+  normalizeNickname: value => String(value || '').toLowerCase(),
+  escapeHtml: text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
+  prepareIdentityForSpace: async () => {}, startIdentityConnectionMonitor() {},
+});
+const fixtureAuth = { currentUser: { uid: 'fixture-me' }, onAuthStateChanged: callback => setTimeout(() => callback({uid:'fixture-me'}), 0) };
+window.firebase = { auth: () => fixtureAuth, database: () => ({
+  goOnline: () => fixtureConnection(true),
+  ref: key => key === '.info/connected' ? { on: (_event, callback) => { fixtureConnectionListener = callback; callback({val: () => fixtureConnected}); } }
+    : key.startsWith('messages/') ? fixtureBackend.ref : key.startsWith('whiteboard-game/') ? fixtureBackend.game : { on(){}, off(){} },
+}) };
+firebase.database.ServerValue = { TIMESTAMP: { '.sv': 'timestamp' } };
+</script>
+<script src="../../js/chat.js"></script>
+<script src="../../js/chat-delivery.js"></script>
+<script>
+document.getElementById('fixture-connect').onclick = () => fixtureConnection(true);
+document.getElementById('fixture-offline').onclick = () => fixtureConnection(false);
+document.getElementById('fixture-fail').onclick = () => { fixtureFail = true; };
+document.getElementById('fixture-ack').onclick = () => { fixturePending.splice(0).forEach(commit => commit()); fixtureStatus(); };
+document.getElementById('fixture-denied').onclick = () => window.chatDelivery.unavailable();
+fixtureStatus();
+</script>
+</html>

@@ -21,7 +21,7 @@ Linkice is a place to hang out with your group directly in the browser. Talk, sh
 
 1. Open your Linkice instance or a room link someone shared with you.
 2. Start chatting, or click **Upadni** to join voice and allow microphone access.
-3. Click your own avatar to mute or unmute. Click another participant to adjust their volume.
+3. Use the microphone and headphones buttons above the main controls to mute or deafen. Click another participant to adjust their volume.
 
 For a room of your own, add a space name to your instance's URL and share it. For example:
 

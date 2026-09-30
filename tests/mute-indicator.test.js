@@ -24,6 +24,9 @@ function setup(level = 0.8) {
   }
   const self = avatar(123456);
   const remote = avatar(234567);
+  for (const id of ["mute-btn", "deafen-btn", "mute-label", "deafen-label", "voice-controls-row", "status"]) {
+    elements.set(id, { style: {}, attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } });
+  }
   const client = {
     uid: 123456, remoteUsers: [{ uid: 234567, hasAudio: true }], handlers: {},
     on(name, handler) { this.handlers[name] = handler; },
@@ -32,7 +35,7 @@ function setup(level = 0.8) {
   const mic = { level, getVolumeLevel() { return this.level; }, async setEnabled() {} };
   const context = vm.createContext({
     mic, console: { ...console, error() {} },
-    window: { addEventListener() {}, CHANNEL: "test", isVoiceJoined: true },
+    window: { addEventListener() {}, CHANNEL: "test", isVoiceJoined: true, uidNameMap: {} },
     document: { addEventListener() {}, getElementById: (id) => elements.get(id) },
     AgoraRTC: { createClient: () => client },
     firebase: { database: () => ({ ref: () => ({ update: (data) => presenceUpdates.push(data) }) }) },
@@ -45,8 +48,87 @@ function setup(level = 0.8) {
   const start = ui.indexOf("window.setUserMuted =");
   vm.runInContext(ui.slice(start, ui.indexOf("// ============================================================", start)), context);
   vm.runInContext("localTracks.audioTrack = mic; startLocalVolumeMonitor(mic);", context);
-  return { context, client, mic, self, remote, timers, presenceUpdates, window: context.window };
+  return { context, client, mic, self, remote, timers, presenceUpdates, elements, window: context.window };
 }
+
+test("call buttons, avatar and status agree; deafen restores an initially live microphone", async () => {
+  const { window, mic, self, elements, client, presenceUpdates } = setup();
+  const capture = [];
+  mic.setEnabled = async enabled => { capture.push(enabled); };
+  const volumes = [];
+  client.remoteUsers[0].audioTrack = { setVolume: value => volumes.push(value) };
+  window.adjustVolume(234567, 42);
+  await elements.get("mute-btn").onclick();
+  assert.equal(elements.get("voice-controls-row").hidden, false);
+  assert.equal(elements.get("voice-controls-row").style.display, "flex");
+  assert.equal(elements.get("mute-btn").attributes["aria-pressed"], "true");
+  assert.equal(elements.get("mute-label").textContent, "Mutiran");
+  assert.equal(self.has("muted"), true);
+  await window.toggleMute(); // The existing avatar action uses this same function.
+  assert.equal(elements.get("mute-btn").attributes["aria-pressed"], "false");
+  await elements.get("deafen-btn").onclick();
+  assert.equal(volumes.at(-1), 0);
+  assert.equal(window.getRemoteVolume(234567), 42);
+  assert.equal(elements.get("deafen-btn").attributes["aria-pressed"], "true");
+  assert.equal(elements.get("mute-btn").disabled, true);
+  assert.equal(elements.get("status").innerText, "Zvuk i mikrofon isključeni");
+  assert.equal(self.has("muted"), true);
+  assert.equal(self.has("speaking"), false);
+  await window.toggleMute();
+  assert.deepEqual(capture, [false, true, false], "avatar cannot unmute while deafened");
+  await elements.get("deafen-btn").onclick();
+  assert.equal(volumes.at(-1), 42);
+  assert.equal(elements.get("mute-btn").disabled, false);
+  assert.equal(elements.get("deafen-btn").attributes["aria-pressed"], "false");
+  assert.equal(self.has("muted"), false);
+  assert.equal(capture.at(-1), true);
+  assert.equal(presenceUpdates.at(-1).muted, false);
+});
+
+test("undeafen keeps a previously muted microphone muted, including after reconnection", async () => {
+  const { window, client, mic, self, elements } = setup();
+  const capture = [];
+  mic.setEnabled = async enabled => capture.push(enabled);
+  await window.toggleMute();
+  await window.toggleDeafen();
+  await client.handlers["connection-state-change"]("CONNECTED", "RECONNECTING");
+  assert.equal(elements.get("status").innerText, "Zvuk i mikrofon isključeni");
+  await window.toggleDeafen();
+  assert.deepEqual(capture, [false]);
+  assert.equal(self.has("muted"), true);
+  assert.equal(elements.get("mute-btn").attributes["aria-pressed"], "true");
+  assert.equal(elements.get("mute-btn").disabled, false);
+});
+
+test("failed deafen restores listening, mic and controls without publishing a false mute", async () => {
+  const { window, client, mic, self, elements, presenceUpdates } = setup();
+  const volumes = [];
+  client.remoteUsers[0].audioTrack = { setVolume: value => volumes.push(value) };
+  mic.setEnabled = async () => { throw new Error("capture failed"); };
+  await window.toggleDeafen();
+  assert.deepEqual(volumes, [0, 100]);
+  assert.equal(self.has("muted"), false);
+  assert.equal(self.has("speaking"), true);
+  assert.equal(elements.get("deafen-btn").attributes["aria-pressed"], "false");
+  assert.equal(elements.get("deafen-btn").disabled, false);
+  assert.equal(presenceUpdates.length, 0);
+});
+
+test("rapid deafen and mute clicks share a single pending microphone operation", async () => {
+  const { window, mic, elements } = setup();
+  let finish;
+  const capture = [];
+  mic.setEnabled = enabled => { capture.push(enabled); return new Promise(resolve => { finish = resolve; }); };
+  const pending = window.toggleDeafen();
+  assert.equal(elements.get("deafen-btn").disabled, true);
+  await window.toggleDeafen();
+  await window.toggleMute();
+  assert.deepEqual(capture, [false]);
+  finish();
+  await pending;
+  assert.equal(elements.get("deafen-btn").disabled, false);
+  assert.equal(elements.get("mute-btn").disabled, true);
+});
 
 test("mute clears local speaking immediately and ignores all SDK local UID forms", async () => {
   const { window, client, mic, self, timers } = setup();

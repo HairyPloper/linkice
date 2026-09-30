@@ -15,16 +15,18 @@ async function setup(count = 125, configure = () => {}) {
     CHANNEL: "test", myAgoraUID: 42, myDisplayName: "Me", normalizeNickname: name => name?.toLowerCase(),
     isOwnChatMessage: data => data.username === "Me", appendSystemHTML() {},
     appendMessage(name, text, color, key, data, options = {}) {
+      if (rows.some(row => row.key === key)) return;
       const row = { key, name, text, historical: options.historical,
         getBoundingClientRect: () => ({ top: rows.indexOf(row) * 20 - chatMessages.scrollTop }) };
       rows.splice(options.before ? rows.indexOf(options.before) : rows.length, 0, row);
+      return row;
     },
   };
   const chatMessages = { scrollTop: 120, querySelector: () => rows[0] };
   const context = vm.createContext({ window, chatMessages, welcomeArt: "", console: { warn() {} },
     escapeHtml: text => text, document: { getElementById: id => controls[id] || null },
     firebase: { database: () => ({ ref: key => key.startsWith("messages/") ? backend.ref
-      : key.startsWith("whiteboard-game/") ? backend.game : { on() {} } }) },
+      : key.startsWith("whiteboard-game/") ? backend.game : { on() {}, off() {} } }) },
   });
   vm.runInContext(source.slice(source.indexOf("const CHAT_PAGE_SIZE"), source.indexOf("function startPresenceListener()")), context);
   context.startChat();
@@ -115,6 +117,11 @@ test("history completing in a hidden tab leaves unread counts unchanged while li
   assert.deepEqual(badges, [1]);
   backend.add({ username: "Me" });
   assert.equal(window.notificationManager.unreadCount, 1);
+  // Reattaching after a connection error replays existing records.
+  context.startChat();
+  await new Promise(setImmediate);
+  assert.equal(window.notificationManager.unreadCount, 1);
+  assert.deepEqual(badges, [1]);
 });
 
 test("pages containing only hidden private messages still advance the cursor", async () => {

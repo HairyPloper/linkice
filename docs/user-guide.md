@@ -23,7 +23,8 @@ A name chosen through `?name=` or `/nick` is saved in your browser. Otherwise, e
 
 ## Voice and audio
 
-- Click your own avatar to mute or unmute your microphone.
+- After joining voice, use **Mikrofon / Mutiran** in the small row above the main controls to mute or unmute. Your avatar still dims when muted, and clicking it remains a shortcut.
+- Use the headphones button **Zvuk / Utišan** to silence incoming voice and screen-share audio and mute your microphone. Turning sound back on restores your previous microphone state and participant volumes. While sound is off, the microphone stays muted.
 - Click another participant to adjust their voice volume.
 - Use the screen-share player's volume control for shared audio. Screen-share previews are silent.
 - After joining voice, open **Postavke → Audio** to choose a microphone. Speaker selection is available in desktop Chrome and Edge through the current Agora integration.
@@ -35,6 +36,12 @@ Echo cancellation (AEC), automatic gain control (AGC), and noise suppression (AN
 When you are alone in voice, page activity and microphone speech reset the inactivity timer. After 15 inactive minutes, a warning appears; after 30 minutes, Linkice leaves voice and keeps chat connected. Another voice participant joining stops the countdown.
 
 ## Chat and history
+
+The chat header shows **Chat se povezuje…** while connecting or **Chat offline** when disconnected, independently of voice. The indicator disappears once connected. Use **Poveži ponovo** if chat cannot reconnect. You can keep writing while offline.
+
+Outgoing messages show **Slanje…** (sending), **Čeka vezu…** (waiting for a connection), or **Poruka nije poslata** with **Pokušaj ponovo** to retry. The status disappears when the server confirms the message. Retrying uses the same message ID to avoid duplicates. Unconfirmed messages survive refreshes in the same tab and offer retry; they are not automatically resent after a refresh. Closing that tab clears its unsent message copies.
+
+Drafts are saved silently for each room in this browser and restored after refreshes. Sending moves the text into an outgoing message so you can start a new draft immediately. If browser storage is unavailable, the text stays in the input until sending is confirmed.
 
 Chat starts with the latest 50 stored messages. Click **Učitaj starije poruke** at the top to load older messages in batches of 50 while keeping your reading position. Messages addressed to other people are filtered from the view, so a batch can contain fewer visible messages. Loading older messages does not increase unread counts.
 

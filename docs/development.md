@@ -55,6 +55,7 @@ The deployed Firebase rules are not present here. Review read/write permissions 
 | [js/ui.js](../js/ui.js) | Participant cards, chat layout, and media overlays. |
 | [js/rtc.js](../js/rtc.js) | Agora voice, microphone, screen sharing, and reconnection. |
 | [js/chat.js](../js/chat.js) | Chat history, commands, polls, AI requests, and uploads. |
+| [js/chat-delivery.js](../js/chat-delivery.js) | Chat connection state, per-room drafts, outgoing messages, and retries. |
 | [js/whiteboard.js](../js/whiteboard.js) | Shared drawing and the word-guessing game. |
 | [js/notifications.js](../js/notifications.js) | Browser notification and push subscription handling. |
 | [sw.js](../sw.js) | Service worker for push notifications. |
@@ -89,7 +90,7 @@ The [GitHub Actions workflow](../.github/workflows/deploy.yml) runs regression t
 - `dev_b` publishes under `/dev/`.
 - Generated files are published to the `gh-pages` branch.
 
-The deployed HTML loads one versioned application bundle. If you add or reorder scripts, update both `index.html` and the workflow. After building a local `dist` directory, verify its HTML and bundle with:
+The deployed HTML loads one application bundle. If you add or reorder scripts, update both `index.html` and the workflow. After building a local `dist` directory, verify its HTML and bundle with:
 
 ```sh
 node scripts/verify-build.cjs dist

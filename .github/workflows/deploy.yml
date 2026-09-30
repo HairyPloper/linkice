@@ -41,21 +41,22 @@ jobs:
           cp -r src dist/src || true
           cp sw.js dist/sw.js
 
-          echo "Processing: Bundling 7 files..."
-          cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js js/whiteboard.js js/notifications.js > dist/combined.js
+          echo "Processing: Bundling 8 files..."
+          cat js/main.js js/utils.js js/ui.js js/rtc.js js/chat.js js/chat-delivery.js js/whiteboard.js js/notifications.js > dist/combined.js
           terser dist/combined.js -o dist/js/bundle.min.js --compress --mangle
           
           # 1. Look for the main.js tag and swap it for the bundle.min.js tag
-          sed -i "s|<script src=\"js/main.js\"></script>|<script src=\"js/bundle.min.js?v=${GITHUB_SHA}\"></script>|" dist/index.html
+          sed -i "s|<script src=\"js/main.js\"></script>|<script src=\"js/bundle.min.js\"></script>|" dist/index.html
           
-          # 2. Delete the other 6 specific local script tags
+          # 2. Delete the other 7 specific local script tags
           # We use specific names so we don't accidentally delete Firebase or Agora
           sed -i '\|<script src="js/utils.js"></script>|d' dist/index.html
           sed -i '\|<script src="js/ui.js"></script>|d' dist/index.html
-          sed -i '\|<script src="js/rtc.js"></script>|d' dist/index.html
-          sed -i '\|<script src="js/chat.js"></script>|d' dist/index.html
+          sed -i '\|<script src="js/rtc.js[^"]*"></script>|d' dist/index.html
+          sed -i '\|<script src="js/chat.js[^"]*"></script>|d' dist/index.html
+          sed -i '\|<script src="js/chat-delivery.js[^"]*"></script>|d' dist/index.html
           sed -i '\|<script src="js/whiteboard.js"></script>|d' dist/index.html
-          sed -i '\|<script src="js/notifications.js"></script>|d' dist/index.html
+          sed -i '\|<script src="js/notifications.js[^"]*"></script>|d' dist/index.html
 
           node scripts/verify-build.cjs dist
 

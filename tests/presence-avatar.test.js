@@ -81,6 +81,7 @@ test("user-joined draws only an Agora user verified by voice presence", async ()
 
   const context = vm.createContext({
     console,
+    isDeafened: false,
     resolveRemoteName: async () => nextIdentity,
     syncAfkTimerWithOccupancy: (change) => occupancyChanges.push(change),
     window: {
@@ -113,4 +114,8 @@ test("user-joined draws only an Agora user verified by voice presence", async ()
   assert.equal(messages.length, 1);
   assert.equal(tones.length, 1);
   assert.equal(occupancyChanges.length, 1);
+  context.isDeafened = true;
+  await handlers.get("user-joined")({ uid: 765432 });
+  assert.equal(drawn.length, 2);
+  assert.equal(tones.length, 1, "joining participants do not play a tone while deafened");
 });

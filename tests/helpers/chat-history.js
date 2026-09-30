@@ -38,8 +38,8 @@
       };
     }
     backend.ref = query();
-    backend.add = (data = {}) => {
-      const record = { key: `-fixture${String(records.length + 1).padStart(4, "0")}`,
+    backend.add = (data = {}, key = null) => {
+      const record = { key: key || `-fixture${String(records.length + 1).padStart(4, "0")}`,
         data: { username: "Tester", text: "Live message", timestamp: Date.now(), ...data } };
       records.push(record);
       listeners.forEach(callback => callback(leaf(record)));

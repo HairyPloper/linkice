@@ -6,35 +6,33 @@ const test = require('node:test');
 const source = fs.readFileSync(path.join(__dirname,'..','js','chat.js'),'utf8');
 const section = (start,end) => source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
 const quiet = {error(){},warn(){}};
-function sending() {
-  const input={value:'first message',focus(){}};
-  const sendBtn={};const sent=[];const pending=[];const errors=[];
-  const window={myDisplayName:'Tester',appendMessage:(...args)=>errors.push(args),chatRef:{push(data){sent.push(data);return new Promise((resolve,reject)=>pending.push({resolve,reject}));}}};
-  const context=vm.createContext({window,chatInput:input,sendBtn,commandHistory:[],historyIndex:0,handleCommand:()=>false,getChatSenderMetadata:()=>({}),console:quiet,firebase:{database:{ServerValue:{TIMESTAMP:{'.sv':'timestamp'}}}}});
-  vm.runInContext(section('let messageSendPending','if (sendBtn) sendBtn.onclick'),context);
-  return {input,sendBtn,sent,pending,errors,window};
-}
+const sending = require('./helpers/chat-delivery');
 test('rapid sends do not duplicate messages or erase the next draft',async()=>{
-  const {window,input,sent,pending,sendBtn}=sending();
+  const {window,input,pending,type}=sending();
+  type('first message');
   const first=window.sendMessage();await window.sendMessage();
-  assert.equal(sent.length,1);assert.equal(sendBtn.disabled,true);
-  input.value='next draft';pending[0].resolve();await first;
-  assert.equal(input.value,'next draft');assert.equal(sendBtn.disabled,false);
-  const next=window.sendMessage();pending[1].resolve();await next;
-  assert.equal(sent[1].text,'next draft');assert.equal(input.value,'');
+  assert.equal(pending.length,1);assert.equal(input.value,'');
+  type('next draft');pending[0].resolve();await first;
+  assert.equal(input.value,'next draft');
+  await window.sendMessage();pending[1].resolve();
+  assert.equal(pending[1].data.text,'next draft');assert.equal(input.value,'');
 });
-test('failed sends retain the draft and allow retry',async()=>{
-  const {window,input,pending,sent,errors}=sending();
-  const first=window.sendMessage();pending[0].reject(new Error('offline'));await first;
-  assert.equal(input.value,'first message');assert.equal(errors.length,1);
-  const retry=window.sendMessage();pending[1].resolve();await retry;assert.equal(sent.length,2);
+test('failed sends retain their outgoing copy and allow retry',async()=>{
+  const {window,pending,type,delivery,session}=sending();
+  type('first message');await window.sendMessage();pending[0].reject(new Error('offline'));
+  await new Promise(setImmediate);
+  assert.equal(delivery().dataset.state,'failed');assert.ok([...session.values()][0].includes('first message'));
+  delivery().children[1].onclick();pending[1].resolve();await new Promise(setImmediate);
+  assert.equal(pending.length,2);assert.equal(pending[0].id,pending[1].id);
+  assert.equal(delivery().dataset.state,'sent');
 });
 test('hanging or rejected notification registration does not block chat',async()=>{
   for(const registration of [()=>new Promise(()=>{}),()=>Promise.reject(new Error('permission'))]) {
-    const {window,pending,sent}=sending();
+    const {window,pending,type}=sending();
+    type('first message');
     window.notificationManager={ensurePushSubscription:registration,triggerGlobalPush(){}};
-    const send=window.sendMessage();assert.equal(sent.length,1);pending[0].resolve();await send;
-    assert.equal(sent[0].timestamp['.sv'],'timestamp');
+    const send=window.sendMessage();assert.equal(pending.length,1);pending[0].resolve();await send;
+    assert.equal(pending[0].data.timestamp['.sv'],'timestamp');
   }
 });
 test('votes wait for a successful commit, suppress double clicks, and permit retries',async()=>{
