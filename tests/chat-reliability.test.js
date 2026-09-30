@@ -50,12 +50,12 @@ test('votes wait for a successful commit, suppress double clicks, and permit ret
 });
 test('historical and out-of-round messages cannot win the current whiteboard game',()=>{
   let incoming;const wins=[];let game={active:true,roundId:'new',startedAt:1000,endsAt:2000,word:'petak',drawer:'Drawer',drawerSessionId:'111111'};
-  const chatRef={limitToLast:()=>({on:(event,fn)=>incoming=fn}),on(){},push:data=>wins.push(data)};
+  const chatRef={orderByKey(){return this;},limitToLast(){return this;},on(event,fn){if(event==='child_added')incoming=fn;},once:async()=>({forEach(){},numChildren:()=>0}),push:data=>wins.push(data)};
   const gameRef={transaction(update,complete){const next=update(game);if(next!==undefined){game=next;complete?.(null,true,{val:()=>next});}}};
   const window={CHANNEL:'test',myAgoraUID:222222,uidNameMap:{},appendSystemHTML(){},appendMessage(){}};
   const context=vm.createContext({window,welcomeArt:'',document:{getElementById:()=>null},clearInterval(){},firebase:{database:()=>({ref:p=>p.startsWith('messages/')?chatRef:p.startsWith('whiteboard-game/')?gameRef:{on(){}}})}});
-  vm.runInContext(section('function startChat()','function startPresenceListener()'),context);context.startChat();
-  for(const timestamp of [undefined,500,2500]) incoming({key:'old',val:()=>({username:'Player',text:'petak',timestamp})});
+  vm.runInContext(section('const CHAT_PAGE_SIZE','function startPresenceListener()'),context);context.startChat();
+  for(const timestamp of [undefined,500,2500]) incoming({key:`old-${timestamp}`,val:()=>({username:'Player',text:'petak',timestamp})});
   assert.equal(wins.length,0);assert.equal(game.active,true);
   incoming({key:'current',val:()=>({username:'Player',text:'petak',timestamp:1500})});assert.equal(wins.length,1);assert.equal(game,null);
 });

@@ -36,7 +36,7 @@ When you are alone in voice, page activity and microphone speech reset the inact
 
 ## Chat and history
 
-Chat shows the latest 50 stored messages. Messages addressed to other people are filtered from the view, so fewer messages may be visible.
+Chat starts with the latest 50 stored messages. Click **Učitaj starije poruke** at the top to load older messages in batches of 50 while keeping your reading position. Messages addressed to other people are filtered from the view, so a batch can contain fewer visible messages. Loading older messages does not increase unread counts.
 
 On desktop, drag the chat handle to move the panel or click it to collapse it. URLs can expand into images, video, audio, YouTube, Spotify, and file previews. Uploads use Catbox for permanent hosting or Litterbox for temporary hosting.
 

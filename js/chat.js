@@ -126,8 +126,12 @@ window.appendMessage = (
   color = "#805ff5",
   snapshotKey = null,
   data = null,
+  { historical = false, before = null } = {},
 ) => {
   if (!chatMessages) return;
+  if (snapshotKey && document.getElementById(`chat-msg-${snapshotKey}`)) return;
+  const followLatest = !historical &&
+    chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 60;
 
   // Build a HH:MM timestamp if the message carries one
   let timeString = "";
@@ -164,16 +168,16 @@ window.appendMessage = (
     ...chatMessages.querySelectorAll(".chat-msg:not(.system-msg):not(.chat-msg--system)"),
   ].pop();
   if (
-    !isSystem &&
+    !historical && !isSystem &&
     previousMessage &&
     previousMessage.classList.contains(isMe ? "chat-msg--own" : "chat-msg--other")
   ) {
     msgDiv.classList.add("chat-msg--connected");
   }
 
-  chatMessages.appendChild(msgDiv);
+  chatMessages.insertBefore(msgDiv, before);
   // Increment unread badge if chat is collapsed
-  if (chatContainer.classList.contains("collapsed") && name !== "Sistem" && !isMe) {
+  if (!historical && chatContainer.classList.contains("collapsed") && name !== "Sistem" && !isMe) {
     const badge = document.getElementById("unread-badge");
     if (badge) {
       const current = parseInt(badge.innerText) || 0;
@@ -181,12 +185,16 @@ window.appendMessage = (
       badge.classList.remove("hidden");
     }
   }
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-
-  // Second scroll after a short delay to account for late-rendering media
-  setTimeout(() => {
+  if (!historical && (followLatest || isMe)) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
-  }, 200);
+    const settledScrollTop = chatMessages.scrollTop;
+    // Do not pull readers away from history if they scroll during media loading.
+    setTimeout(() => {
+      if (Math.abs(chatMessages.scrollTop - settledScrollTop) < 2) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    }, 200);
+  }
 
   return msgDiv;
 };
@@ -745,6 +753,13 @@ function handleCommand(text) {
 
     // Wipe the local chat view
     case "/clear":
+      if (chatHistory) {
+        chatHistory.version++;
+        chatHistory.loading = false;
+        chatHistory.hasMore = false;
+        chatHistory.cleared = true;
+        updateChatHistoryControls();
+      }
       chatMessages.innerHTML = "";
       return true;
 
@@ -956,20 +971,108 @@ function handleCommand(text) {
 // FIREBASE LISTENERS
 // startChat — called once after auth, sets up child_added and child_changed
 // ============================================================
+const CHAT_PAGE_SIZE = 50;
+let chatHistory = null;
+
+function updateChatHistoryControls(message = "") {
+  const controls = document.getElementById("chat-history-controls");
+  const button = document.getElementById("load-older-messages");
+  const status = document.getElementById("chat-history-status");
+  if (!controls || !button || !status) return;
+  controls.hidden = !chatHistory || chatHistory.cleared || (!chatHistory.hasMore && !message);
+  button.hidden = !chatHistory?.hasMore;
+  button.disabled = !!chatHistory?.loading;
+  button.textContent = chatHistory?.loading ? "Učitavanje…" : "Učitaj starije poruke";
+  status.textContent = message;
+}
+
+async function readInitialChatHistory(state) {
+  const version = state.version;
+  state.loading = true;
+  updateChatHistoryControls();
+  try {
+    const snapshot = await state.query.once("value");
+    if (state !== chatHistory || version !== state.version) return;
+    // child_added delivers the initial window before this value snapshot.
+    // Keep the earliest received key even if new messages moved that window.
+    snapshot.forEach(child => {
+      if (!state.oldestKey || child.key < state.oldestKey) state.oldestKey = child.key;
+    });
+    state.ready = true;
+    state.hasMore = snapshot.numChildren() >= CHAT_PAGE_SIZE;
+    document.getElementById("chat-skeleton-loader")?.remove();
+  } catch (error) {
+    if (state !== chatHistory || version !== state.version) return;
+    console.warn("Initial chat history unavailable:", error);
+    state.loading = false;
+    updateChatHistoryControls("Istorija nije učitana. Pokušaj ponovo.");
+    return;
+  }
+  if (state !== chatHistory || version !== state.version) return;
+  state.loading = false;
+  updateChatHistoryControls();
+}
+
+window.loadOlderMessages = async () => {
+  const state = chatHistory;
+  if (!state || state.loading || !state.hasMore || state.cleared) return;
+  if (!state.ready) return readInitialChatHistory(state);
+  if (!state.oldestKey) return;
+  const version = state.version;
+  state.loading = true;
+  updateChatHistoryControls();
+  try {
+    // An exclusive key cursor is stable even when timestamps are identical.
+    // Fetch one extra record to know whether another page remains.
+    const snapshot = await state.ref.orderByKey().endBefore(state.oldestKey)
+      .limitToLast(CHAT_PAGE_SIZE + 1).once("value");
+    if (state !== chatHistory || version !== state.version) return;
+    const records = [];
+    snapshot.forEach(child => { records.push(child); });
+    const page = records.slice(-CHAT_PAGE_SIZE);
+    const before = chatMessages.querySelector(".chat-msg[id]");
+    const anchorTop = before?.getBoundingClientRect().top;
+    for (const child of page) {
+      if (state.seen.has(child.key)) continue;
+      state.seen.add(child.key);
+      state.render(child, { historical: true, before });
+    }
+    if (page.length) state.oldestKey = page[0].key;
+    state.hasMore = records.length > CHAT_PAGE_SIZE;
+    state.loading = false;
+    updateChatHistoryControls(state.hasMore ? "" : "Nema starijih poruka.");
+    // Account for browser scroll anchoring and changes in the controls' height.
+    if (before) chatMessages.scrollTop += before.getBoundingClientRect().top - anchorTop;
+  } catch (error) {
+    if (state !== chatHistory || version !== state.version) return;
+    console.warn("Older chat messages unavailable:", error);
+    state.loading = false;
+    updateChatHistoryControls("Poruke nisu učitane. Pokušaj ponovo.");
+  }
+};
+const loadOlderButton = document.getElementById("load-older-messages");
+if (loadOlderButton) loadOlderButton.onclick = () => window.loadOlderMessages();
+
 function startChat() {
+  if (chatHistory) chatHistory.query.off("child_added", chatHistory.receive);
   window.chatRef = firebase.database().ref(`messages/${window.CHANNEL}`);
+  const state = chatHistory = {
+    ref: window.chatRef, query: window.chatRef.orderByKey().limitToLast(CHAT_PAGE_SIZE),
+    oldestKey: null, hasMore: true, loading: true, ready: false, version: 0, seen: new Set(),
+  };
 
   // Prepend the welcome banner (ASCII art)
   window.appendSystemHTML(welcomeArt, true);
 
   // Listen to the last 50 messages; also fires for each new incoming message
-  window.chatRef.limitToLast(50).on("child_added", (snapshot) => {
+  state.render = (snapshot, options = {}) => {
 
     // Remove skeleton loader on first real message
     const skeleton = document.getElementById("chat-skeleton-loader");
     if (skeleton) skeleton.remove();
 
     const message = snapshot.val();
+    if (!message) return;
     const message_key  = snapshot.key;
 
     // Private messages are only shown to the sender and the named recipient
@@ -984,12 +1087,12 @@ function startChat() {
         const prefix = isMeSender
           ? `[privatna za ${escapeHtml(message.to || "")}]`
           : `[Privatna od ${escapeHtml(message.username || "")}]`;
-        window.appendMessage(prefix, message.text, "#d1d5db", message_key, message);
+        window.appendMessage(prefix, message.text, "#d1d5db", message_key, message, options);
       }
       return;
     }
     // Check if the message is a guess in an active whiteboard game
-    if (message.username !== "Sistem") {
+    if (!options.historical && message.username !== "Sistem") {
       const gameRef = firebase.database().ref(`whiteboard-game/${window.CHANNEL}`);
       // Transaction runs atomically — only one client wins the race
       gameRef.transaction((game) => {
@@ -1025,8 +1128,17 @@ function startChat() {
       });
     }
         // Standard messages and polls
-        window.appendMessage(message.username, message.text, message.color || "#805ff5", message_key, message);
-      });
+    window.appendMessage(message.username, message.text, message.color || "#805ff5", message_key, message, options);
+  };
+  state.receive = (snapshot) => {
+    if (state !== chatHistory) return;
+    if (!state.oldestKey || snapshot.key < state.oldestKey) state.oldestKey = snapshot.key;
+    if (state.seen.has(snapshot.key)) return;
+    state.seen.add(snapshot.key);
+    state.render(snapshot);
+  };
+  state.query.on("child_added", state.receive);
+  void readInitialChatHistory(state);
 
   // Listen for updates to existing messages (used for live poll vote counts)
   window.chatRef.on("child_changed", (snapshot) => {

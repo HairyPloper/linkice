@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="sr">
+<meta charset="utf-8">
+<title>Chat history pagination check</title>
+<link rel="stylesheet" href="../../css/style.css">
+<style>
+body { background: #0b1020; }
+#chat-container { top: 30px; height: calc(100vh - 60px); }
+#checks { position: fixed; top: 30px; left: 24px; max-width: 300px; color: white; font: 14px system-ui; }
+#checks button { display: block; margin: 12px 0; padding: 10px; }
+</style>
+<aside id="checks">
+  <h1>Chat history test</h1>
+  <p>125 simulated records; no network writes. Uses the real chat renderer and pagination.</p>
+  <button id="fixture-live">Receive live message</button>
+  <button id="fixture-fail">Fail next history request</button>
+  <button id="fixture-pause">Pause next history request</button>
+  <button id="fixture-resume">Finish history request</button>
+  <button id="fixture-clear">Clear local view</button>
+</aside>
+<div id="chat-container">
+  <div id="chat-header"><span>History fixture</span><button id="settings-btn">Postavke</button><span id="unread-badge" class="hidden">0</span><div id="chat-drag-handle">↕</div></div>
+  <div id="settings-menu" class="hidden"></div>
+  <div id="chat-history-controls" hidden><button id="load-older-messages" type="button">Učitaj starije poruke</button><span id="chat-history-status" role="status"></span></div>
+  <div id="chat-messages" tabindex="0" aria-label="Chat messages"></div>
+  <input id="chat-input" placeholder="Tekst...">
+</div>
+<script src="../helpers/chat-history.js"></script>
+<script>
+const fixtureBackend = createChatHistorySource();
+fixtureBackend.records[27].data = {type:'private',username:'Someone',toSessionId:'99',text:'HIDDEN PRIVATE MESSAGE'};
+fixtureBackend.records[28].data = {type:'private',username:'Someone',toSessionId:'42',text:'Visible private history'};
+fixtureBackend.records[19].data = {type:'poll',username:'Tester',question:'Old poll',options:['Yes','No'],votes:{Yes:2}};
+Object.assign(window, {
+  CHANNEL:'history-fixture',myAgoraUID:42,myDisplayName:'Me',
+  normalizeNickname: value => String(value || '').toLowerCase(),
+  escapeHtml: text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
+  prepareIdentityForSpace: async () => {}, startIdentityConnectionMonitor() {},
+});
+window.firebase = {
+  auth: () => ({ currentUser:{uid:'fixture-me'}, onAuthStateChanged(callback) { setTimeout(() => callback({uid:'fixture-me'}), 0); } }),
+  database: () => ({ref: key => key.startsWith('messages/') ? fixtureBackend.ref : key.startsWith('whiteboard-game/') ? fixtureBackend.game : {on(){}}}),
+};
+</script>
+<script src="../../js/chat.js"></script>
+<script>
+document.getElementById('fixture-live').onclick = () => fixtureBackend.add();
+document.getElementById('fixture-fail').onclick = () => { fixtureBackend.failNext = true; };
+document.getElementById('fixture-pause').onclick = () => { fixtureBackend.pauseNext = true; };
+document.getElementById('fixture-resume').onclick = () => fixtureBackend.resume?.();
+document.getElementById('fixture-clear').onclick = () => handleCommand('/clear');
+</script>
+</html>
