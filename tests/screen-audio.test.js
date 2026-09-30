@@ -67,6 +67,81 @@ function setup(storage) {
   return { window, context, clients, sdk, screenButton, visibility, videos, video, audio };
 }
 
+function enableMic(context) {
+  context.mic = { async setEnabled() {}, getVolumeLevel: () => 0 };
+  context.firebase = { database: () => ({ ref: () => ({ update() {} }) }) };
+  vm.runInContext("localTracks.audioTrack = mic;", context);
+}
+
+test("deafen silences cached voice and screen tracks without changing saved gains", async () => {
+  const { window, context, clients } = setup();
+  enableMic(context);
+  const voice = { uid: owner, audioTrack: track() };
+  const screen = { uid: screenUid, audioTrack: track() };
+  clients[0].remoteUsers.push(voice, screen);
+  await clients[0].events["user-published"](voice, "audio");
+  await clients[0].events["user-published"](screen, "audio");
+  window.adjustVolume(owner, 0);
+  window.adjustScreenVolume(owner, 61);
+  window.setWatchedScreen(owner);
+  const voiceAudio = voice.audioTrack;
+  const screenAudio = screen.audioTrack;
+  delete voice.audioTrack;
+  delete screen.audioTrack;
+  await window.toggleDeafen();
+  assert.deepEqual(voiceAudio.calls.at(-1), ["volume", 0]);
+  assert.deepEqual(screenAudio.calls.at(-1), ["volume", 0]);
+  window.adjustVolume(owner, 37);
+  window.adjustScreenVolume(owner, 73);
+  window.restoreParticipantVolume(owner, "Alice");
+  window.setWatchedScreen(null);
+  window.setWatchedScreen(owner);
+  assert.deepEqual(voiceAudio.calls.at(-1), ["volume", 0]);
+  assert.deepEqual(screenAudio.calls.at(-1), ["volume", 0]);
+  await window.toggleDeafen();
+  assert.deepEqual(voiceAudio.calls.at(-1), ["volume", 37]);
+  assert.deepEqual(screenAudio.calls.at(-1), ["volume", 73]);
+  window.adjustVolume(owner, 0);
+  await window.toggleDeafen();
+  window.setWatchedScreen(null);
+  await window.toggleDeafen();
+  assert.deepEqual(voiceAudio.calls.at(-1), ["volume", 0]);
+  assert.deepEqual(screenAudio.calls.at(-1), ["volume", 0], "screen previews remain silent after undeafen");
+});
+
+test("new voice and screen audio stay silent when they arrive while deafened", async () => {
+  const { window, context, clients } = setup();
+  enableMic(context);
+  await window.toggleDeafen();
+  window.setWatchedScreen(owner);
+  for (const uid of [owner, screenUid]) {
+    const user = { uid, audioTrack: track() };
+    clients[0].remoteUsers.push(user);
+    await clients[0].events["user-published"](user, "audio");
+    assert.deepEqual(user.audioTrack.calls[0], ["volume", 0]);
+    assert.deepEqual(user.audioTrack.calls.at(-1), ["play"]);
+  }
+  await window.toggleDeafen();
+  assert.deepEqual(clients[0].remoteUsers[0].audioTrack.calls.at(-1), ["volume", 100]);
+  assert.deepEqual(clients[0].remoteUsers[1].audioTrack.calls.at(-1), ["volume", 18]);
+});
+
+test("deafening during asynchronous speaker selection silences the track before playback", async () => {
+  const { window, context, clients } = setup();
+  enableMic(context);
+  const user = { uid: owner, audioTrack: track() };
+  let finish;
+  user.audioTrack.setPlaybackDevice = () => new Promise(resolve => { finish = resolve; });
+  clients[0].remoteUsers.push(user);
+  const subscribing = clients[0].events["user-published"](user, "audio");
+  await new Promise(setImmediate);
+  await window.toggleDeafen();
+  finish();
+  await subscribing;
+  assert.deepEqual(user.audioTrack.calls.at(-2), ["volume", 0]);
+  assert.deepEqual(user.audioTrack.calls.at(-1), ["play"]);
+});
+
 test("name preferences survive reload and new UIDs, including zero and separate screen gain", async () => {
   const values = new Map();
   const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };

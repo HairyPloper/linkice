@@ -1433,17 +1433,6 @@ if (emojiBtn && emojiPicker) {
 }
 
 // ============================================================
-// GLOBAL KEYBOARD SHORTCUT
-// Tab focuses the chat input from anywhere on the page
-// ============================================================
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Tab" && document.activeElement !== chatInput) {
-    e.preventDefault();
-    chatInput.focus();
-  }
-});
-
-// ============================================================
 // EMOJI INSERTER
 // Inserts an emoji at the current cursor position in the input
 // ============================================================

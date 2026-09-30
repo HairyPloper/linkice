@@ -52,7 +52,7 @@ jobs:
           # We use specific names so we don't accidentally delete Firebase or Agora
           sed -i '\|<script src="js/utils.js"></script>|d' dist/index.html
           sed -i '\|<script src="js/ui.js"></script>|d' dist/index.html
-          sed -i '\|<script src="js/rtc.js"></script>|d' dist/index.html
+          sed -i '\|<script src="js/rtc.js[^"]*"></script>|d' dist/index.html
           sed -i '\|<script src="js/chat.js"></script>|d' dist/index.html
           sed -i '\|<script src="js/whiteboard.js"></script>|d' dist/index.html
           sed -i '\|<script src="js/notifications.js"></script>|d' dist/index.html
