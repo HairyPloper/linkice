@@ -178,11 +178,16 @@
             </select>
             <hr style="border-color: rgba(255,255,255,0.1); margin: 10px 0;">
             <h4 style="margin: 5px 0;">Audio</h4>
+            <label for="microphone-select" id="microphone-label" style="display:none;">Mikrofon:</label>
+            <select id="microphone-select" style="display:none;">
+              <option value="default">Podrazumevano</option>
+            </select>
             <label for="speaker-select" id="speaker-label" style="display:none;">Zvučnici:</label>
             <select id="speaker-select" style="display:none;">
-              <option value="">Podrazumevano</option>
+              <option value="default">Podrazumevano</option>
             </select>
             <hr id="speaker-hr" style="border-color: rgba(255,255,255,0.1); margin: 10px 0; display:none;">
+            <p id="audio-device-status" role="status" style="font-size:11px; max-width:260px;">Izbor uređaja je dostupan nakon povezivanja.</p>
             <label><input type="checkbox" id="setting-aec"> (AEC) Echo poništavanje</label><br>
             <label><input type="checkbox" id="setting-agc"> (AGC) Auto pojačanje</label><br>
             <label><input type="checkbox" id="setting-ans"> (ANS) Uklanjanje šuma</label>

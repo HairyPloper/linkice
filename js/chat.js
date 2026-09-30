@@ -1353,9 +1353,33 @@ window.addEmoji = (emoji) => {
 // ============================================================
 if (chatContainer && dragHandle) {
   let x = 0, y = 0, initialX = 0, initialY = 0, isDragging = false;
+  const savedLayout = window.browserPreferences?.read("chat-layout");
+  let position = savedLayout && Number.isFinite(savedLayout.left) && Number.isFinite(savedLayout.top)
+    ? { left: savedLayout.left, top: savedLayout.top } : null;
+  const saveLayout = () => window.browserPreferences?.write("chat-layout", {
+    ...position,
+    collapsed: chatContainer.classList.contains("collapsed"),
+  });
+  const applyPosition = () => {
+    // Mobile has a dedicated full-width layout; retain the desktop position.
+    if (!position || window.innerWidth <= 767) return;
+    const left = Math.max(0, Math.min(position.left, window.innerWidth - chatContainer.offsetWidth));
+    const top = Math.max(0, Math.min(position.top, window.innerHeight - chatContainer.offsetHeight));
+    chatContainer.style.left = `${left}px`;
+    chatContainer.style.top = `${top}px`;
+    chatContainer.style.bottom = "auto";
+    chatContainer.style.right = "auto";
+  };
+  if (typeof savedLayout?.collapsed === "boolean") {
+    chatContainer.classList.toggle("collapsed", savedLayout.collapsed);
+    settingsBtn?.classList.toggle("hidden", savedLayout.collapsed);
+  }
+  applyPosition();
+  window.addEventListener("resize", applyPosition);
 
   dragHandle.onmousedown = (e) => {
     if (e.button !== 0) return; // Left-click only
+    if (window.innerWidth <= 767) return;
 
     isDragging = false;
     initialX   = e.clientX;
@@ -1369,14 +1393,17 @@ if (chatContainer && dragHandle) {
       initialY = e.clientY;
 
       // Move the panel by the delta, clearing right/bottom anchors
-      chatContainer.style.top   = chatContainer.offsetTop  - y + "px";
-      chatContainer.style.left  = chatContainer.offsetLeft - x + "px";
-      chatContainer.style.bottom = "auto";
-      chatContainer.style.right  = "auto";
+      position = { top: chatContainer.offsetTop - y, left: chatContainer.offsetLeft - x };
+      applyPosition();
     };
 
     document.onmouseup = () => {
       document.onmousemove = null;
+      document.onmouseup = null;
+      if (isDragging) {
+        position = { top: chatContainer.offsetTop, left: chatContainer.offsetLeft };
+        saveLayout();
+      }
     };
   };
 
@@ -1385,6 +1412,8 @@ if (chatContainer && dragHandle) {
     if (!isDragging) {
       chatContainer.classList.toggle("collapsed");
       settingsBtn.classList.toggle("hidden");
+      applyPosition();
+      saveLayout();
 
       // Clear badge when opening chat
       if (!chatContainer.classList.contains("collapsed")) {

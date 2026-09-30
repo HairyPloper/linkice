@@ -379,10 +379,95 @@ window.supportsSpeakerSelection = () =>
   typeof HTMLMediaElement !== "undefined" &&
   typeof HTMLMediaElement.prototype.setSinkId === "function";
 
+const audioDevicePreferences = new Map();
+window.readAudioDevice = (kind) => {
+  if (audioDevicePreferences.has(kind)) return audioDevicePreferences.get(kind);
+  try { return localStorage.getItem(`${kind}-device`) || "default"; }
+  catch { return "default"; }
+};
+window.saveAudioDevice = (kind, deviceId) => {
+  audioDevicePreferences.set(kind, deviceId);
+  try { localStorage.setItem(`${kind}-device`, deviceId); }
+  catch { /* Device selection still works for this call without storage. */ }
+};
+window.showAudioDeviceStatus = (message = window.isVoiceJoined && !window.supportsSpeakerSelection()
+  ? "Za izbor zvučnika koristi podešavanja uređaja ili desktop Chrome/Edge." : "") => {
+  const status = document.getElementById("audio-device-status");
+  if (status) status.textContent = message;
+};
+let selectedSpeaker = window.readAudioDevice("speaker");
+window.getSpeakerDevice = () => selectedSpeaker;
+
+function populateAudioDevices(select, devices, selected, fallbackLabel) {
+  select.options.length = 1;
+  const seen = new Set(["default"]);
+  for (const device of devices) {
+    if (!device.deviceId || seen.has(device.deviceId)) continue;
+    seen.add(device.deviceId);
+    const opt = document.createElement("option");
+    opt.value = device.deviceId;
+    opt.text = device.label || `${fallbackLabel} ${select.options.length}`;
+    select.appendChild(opt);
+  }
+  select.value = seen.has(selected) ? selected : "default";
+}
+
+let audioDevicesGeneration = 0;
+window.hideAudioDevices = () => {
+  audioDevicesGeneration++;
+  selectedSpeaker = window.readAudioDevice("speaker");
+  for (const id of ["microphone-select", "microphone-label", "speaker-select", "speaker-label", "speaker-hr"]) {
+    const element = document.getElementById(id);
+    if (element) element.style.display = "none";
+  }
+  window.showAudioDeviceStatus("Izbor uređaja je dostupan nakon povezivanja.");
+};
+
+async function loadMicrophones() {
+  const generation = audioDevicesGeneration;
+  const track = window.getMicrophoneTrack?.();
+  if (!window.isVoiceJoined || !track) return;
+  try {
+    const devices = await AgoraRTC.getMicrophones(true);
+    if (!window.isVoiceJoined || generation !== audioDevicesGeneration || track !== window.getMicrophoneTrack()) return;
+    const select = document.getElementById("microphone-select");
+    if (!select || !devices.length || select.disabled) return;
+    const saved = window.readAudioDevice("microphone");
+    const actual = track.getMediaStreamTrack?.().getSettings?.().deviceId;
+    populateAudioDevices(select, devices, saved === "default" ? "default" : actual || saved, "Mikrofon");
+    let selectedMicrophone = select.value;
+    select.onchange = async () => {
+      const previous = selectedMicrophone;
+      const deviceId = select.value;
+      select.disabled = true;
+      try {
+        const target = deviceId === "default" && !devices.some(device => device.deviceId === "default")
+          ? devices[0].deviceId : deviceId;
+        if (!await window.switchMicrophone(target)) throw new Error("Microphone switch failed");
+        if (generation !== audioDevicesGeneration) return;
+        selectedMicrophone = deviceId;
+        window.saveAudioDevice("microphone", deviceId);
+        window.showAudioDeviceStatus();
+      } catch (error) {
+        if (generation !== audioDevicesGeneration) return;
+        select.value = previous;
+        window.showAudioDeviceStatus("Promena mikrofona nije uspela. Pokušaj ponovo.");
+      } finally {
+        select.disabled = false;
+      }
+    };
+    select.style.display = "block";
+    document.getElementById("microphone-label").style.display = "block";
+  } catch (error) {
+    console.warn("Microphone enumeration unavailable:", error);
+  }
+}
+
 async function loadSpeakers() {
   // Run after successful join, not concurrently with microphone acquisition.
   // Agora does not support output switching on Firefox or Safari.
   if (!window.supportsSpeakerSelection()) return;
+  const generation = audioDevicesGeneration;
   let devices;
   try {
     devices = await AgoraRTC.getPlaybackDevices(true);
@@ -390,31 +475,50 @@ async function loadSpeakers() {
     console.warn("Speaker enumeration unavailable:", error);
     return;
   }
-  if (!window.isVoiceJoined) return;
+  if (!window.isVoiceJoined || generation !== audioDevicesGeneration) return;
   if (!devices.length) return;
 
   const select = document.getElementById("speaker-select");
+  if (!select || select.disabled) return;
+  populateAudioDevices(select, devices, selectedSpeaker, "Zvučnik");
+  selectedSpeaker = select.value;
+  select.disabled = true;
+  try {
+    const applied = await window.applySpeakerDevice?.(selectedSpeaker);
+    if (generation !== audioDevicesGeneration) return;
+    if (applied === false) {
+      selectedSpeaker = select.value = "default";
+      const fallback = await window.applySpeakerDevice?.("default");
+      if (generation !== audioDevicesGeneration) return;
+      window.showAudioDeviceStatus(fallback === false
+        ? "Promena zvučnika nije uspela. Proveri audio podešavanja."
+        : "Sačuvani zvučnik nije dostupan. Koristi se podrazumevani izlaz.");
+    }
+    window.saveAudioDevice("speaker", selectedSpeaker);
+  } finally {
+    select.disabled = false;
+  }
+  if (!window.isVoiceJoined || generation !== audioDevicesGeneration) return;
 
-  // Clear existing options except default
-  select.options.length = 1;
-
-  devices.forEach(device => {
-    const opt = document.createElement("option");
-    opt.value = device.deviceId;
-    opt.text  = device.label || `Zvučnik ${select.options.length}`;
-    select.appendChild(opt);
-  });
-
-  // Restore saved selection
-  const saved = localStorage.getItem("speaker-device");
-  if (saved && devices.some((device) => device.deviceId === saved)) select.value = saved;
-
-  select.onchange = (e) => {
-    const deviceId = e.target.value;
-    localStorage.setItem("speaker-device", deviceId);
-    window.client.remoteUsers.forEach(user => {
-      if (user.audioTrack) void window.setRemotePlaybackDevice(user.audioTrack, deviceId);
-    });
+  select.onchange = async () => {
+    const previous = selectedSpeaker;
+    selectedSpeaker = select.value;
+    select.disabled = true;
+    try {
+      const applied = await window.applySpeakerDevice(selectedSpeaker);
+      if (generation !== audioDevicesGeneration) return;
+      if (!applied) {
+        selectedSpeaker = select.value = previous;
+        await window.applySpeakerDevice(previous);
+        if (generation !== audioDevicesGeneration) return;
+        window.showAudioDeviceStatus("Promena zvučnika nije uspela. Pokušaj ponovo.");
+        return;
+      }
+      window.saveAudioDevice("speaker", selectedSpeaker);
+      window.showAudioDeviceStatus();
+    } finally {
+      select.disabled = false;
+    }
   };
 
   // Show the elements
@@ -422,3 +526,12 @@ async function loadSpeakers() {
   document.getElementById("speaker-label").style.display = "block";
   select.style.display = "block";
 }
+
+window.loadAudioDevices = async () => {
+  window.showAudioDeviceStatus(window.supportsSpeakerSelection()
+    ? "" : "Za izbor zvučnika koristi podešavanja uređaja ili desktop Chrome/Edge.");
+  await Promise.all([loadMicrophones(), loadSpeakers()]);
+};
+navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+  if (window.isVoiceJoined) void window.loadAudioDevices();
+});
