@@ -25,7 +25,7 @@
     <link rel="stylesheet" href="css/style.css" />
 
     <!-- PWA manifest for installability and metadata --> 
-    <link rel="manifest" href="./manifest.json?v=4">
+    <link rel="manifest" href="./manifest.json">
 
     <!-- Open Graph meta tags for rich link previews when sharing -->
     <meta property="og:type" content="website" />
@@ -98,20 +98,38 @@
 
     <!-- ============================================================
          CONTROLS BAR
-         Join / screen share / leave action buttons
+         Join / screen share / mute / deafen / leave action buttons
          ============================================================ -->
     <div class="controls">
-      <button id="join-btn" class="btn join-btn"><span>🚀</span> Upadni</button>
+      <div id="voice-controls-row" class="voice-controls-row" hidden style="display: none" role="group" aria-label="Zvuk i mikrofon">
+        <button id="mute-btn" type="button" class="btn voice-control" hidden style="display: none" aria-pressed="false" aria-label="Isključi mikrofon" title="Isključi mikrofon">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+            <path class="control-slash" d="m3 3 18 18" />
+          </svg>
+          <span id="mute-label">Mikrofon</span>
+        </button>
+        <button id="deafen-btn" type="button" class="btn voice-control" hidden style="display: none" aria-pressed="false" aria-label="Isključi zvuk i mikrofon" title="Isključi zvuk i mikrofon">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 14v-3a8 8 0 0 1 16 0v3" />
+            <rect x="3" y="12" width="4" height="9" rx="2" />
+            <rect x="17" y="12" width="4" height="9" rx="2" />
+            <path class="control-slash" d="m3 3 18 18" />
+          </svg>
+          <span id="deafen-label">Zvuk</span>
+        </button>
+      </div>
 
-      <!-- Screen share — hidden until the user joins -->
-      <button id="screen-btn" class="btn screen-btn" style="display: none">
-        <span>🖥️</span> Podeli ekran
-      </button>
-
-      <!-- Leave — hidden until the user joins -->
-      <button id="leave-btn" class="btn leave-btn" style="display: none">
-        <span>👋</span>Izađi
-      </button>
+      <div class="main-controls-row">
+        <button id="join-btn" class="btn join-btn"><span>🚀</span> Upadni</button>
+        <button id="screen-btn" class="btn screen-btn" style="display: none">
+          <span>🖥️</span> Podeli ekran
+        </button>
+        <button id="leave-btn" class="btn leave-btn" style="display: none">
+          <span>👋</span>Izađi
+        </button>
+      </div>
     </div>
 
     <!-- ============================================================
@@ -123,7 +141,13 @@
 
       <!-- Chat header: toggle buttons, settings, drag handle -->
       <div id="chat-header">
-        <span id="space-name"></span>
+        <div class="chat-heading">
+          <span id="space-name"></span>
+          <div class="chat-connection">
+            <span id="chat-connection-status" role="status" data-state="connecting">Chat se povezuje…</span>
+            <button id="chat-reconnect-btn" type="button" hidden>Poveži ponovo</button>
+          </div>
+        </div>
         <span id="unread-badge" class="hidden">0</span>
         <!-- Toggle background music on/off -->
         <button
@@ -259,6 +283,8 @@
           type="text"
           id="chat-input"
           placeholder="Tekst..."
+          aria-label="Poruka"
+          aria-describedby="chat-draft-status"
           autocomplete="off"
         />
 
@@ -282,8 +308,9 @@
         </div>
 
         <!-- Send message button -->
-        <button id="send-btn">💬</button>
+        <button id="send-btn" type="button" aria-label="Pošalji poruku">💬</button>
       </div>
+      <div id="chat-draft-status" role="status"></div>
     </div>
     <!-- ============================================================
          WHITEBOARD
@@ -386,6 +413,6 @@
          APPLICATION SCRIPTS
          Load order matters: main → utils → ui → rtc → chat -> whiteboard → notifications
          ============================================================ -->
-    <script src="js/bundle.min.js?v=e794eee1faa5c30c413d6421382903b1d5d72fe7"></script>
+    <script src="js/bundle.min.js"></script>
   </body>
 </html>
