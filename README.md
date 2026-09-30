@@ -141,7 +141,13 @@ voice_room_web/
 
 ## Audio settings
 
-AEC (echo cancellation), AGC (gain control), and ANS (noise suppression) can be toggled per-session from the settings menu. Choices are saved to `localStorage`. Speaker output device can also be selected after joining (desktop only).
+AEC (echo cancellation), AGC (gain control), and ANS (noise suppression) can be toggled from the settings menu. Choices are saved to `localStorage` and applied when joining the next call. After joining and granting microphone permission, Settings → Audio offers microphone input selection and, on desktop Chrome/Edge, speaker output selection for call and screen-share audio. Successful choices are remembered for future calls. A removed saved microphone falls back to the default input; unavailable outputs fall back to the default output. Failed switches show a message and restore the previous selection.
+
+The Agora SDK supports speaker switching only on desktop Chrome/Edge. Firefox, Safari, and mobile users can choose microphone inputs exposed by their browser, but must choose speaker/headphone output through their system settings. Device lists refresh when hardware changes. Live hardware/browser validation is separate from the automated SDK-mock compatibility tests.
+
+Voice and screen-share volumes are remembered separately in this browser by participant name (case-insensitive, with surrounding whitespace ignored), including muted/zero volume. They survive reloads, reconnects with new participant IDs, and room changes. Identical names share a saved preference; a different name gets its own preference. These are local playback settings, not account settings.
+
+Chat position on desktop and its expanded/collapsed state are also remembered. Restored positions are constrained to the window, while mobile keeps its responsive chat layout. Existing saved preferences include custom nickname, avatar, last room, microphone processing, and speaker output. Clearing site data removes these settings; they do not sync between browsers or devices.
 
 Solo voice users are considered active when they interact with the page or speak into the microphone. Another voice user joining stops the AFK countdown, and the timer starts fresh when the last other voice user leaves. After 15 inactive minutes the chat shows a warning; after 30 minutes the normal leave flow disconnects Agora but keeps chat and its identity reservation active. Adjust `APP_CONFIG.afkTimeoutMs` and `APP_CONFIG.afkWarningMs` in `js/main.js` to change these intervals.
 

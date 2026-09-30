@@ -104,6 +104,7 @@ if (audioBtn && audio) {
 // was created with a raw numeric UID before the Firebase lookup completed.
 // ============================================================
 window.drawUser = (uid, username, icon, isMe = false) => {
+  if (!isMe) window.restoreParticipantVolume?.(uid, username);
   const existing = document.getElementById(`user-${uid}`);
   if (existing) {
     // Card already exists — just patch the name label and bail out.
@@ -119,6 +120,10 @@ window.drawUser = (uid, username, icon, isMe = false) => {
       avatarEl.classList.toggle("paired-icon", !window.animals.includes(icon));
     }
     window.syncScreenShareCard?.(uid);
+    const slider = existing.querySelector(".voice-volume-row input");
+    const output = existing.querySelector(".voice-volume-row output");
+    if (slider) slider.value = window.getRemoteVolume?.(uid) ?? 100;
+    if (output && slider) output.textContent = `${slider.value}%`;
     return;
   }
 

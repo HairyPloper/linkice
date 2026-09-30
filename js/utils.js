@@ -34,6 +34,31 @@ window.sanitizeForAgora = (name) => {
 // Falls back to a plain string conversion for numeric UIDs (remote users).
 // e.g. "Marko_4271" → "Marko"  |  12345678 → "12345678"
 // ============================================================
+// Preferences are optional: blocked storage or malformed values must not break UI.
+window.browserPreferences = {
+  read(key) {
+    try { return JSON.parse(localStorage.getItem(`linkice:${key}`)); }
+    catch { return null; }
+  },
+  write(key, value) {
+    try { localStorage.setItem(`linkice:${key}`, JSON.stringify(value)); }
+    catch { /* Keep the current session usable when storage is unavailable. */ }
+  },
+  nameKey(name) {
+    return typeof name === "string" ? name.normalize("NFC").trim().toLowerCase() : "";
+  },
+  volume(name, kind) {
+    const key = this.nameKey(name);
+    const value = key ? this.read(`volume:${encodeURIComponent(key)}:${kind}`) : null;
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100
+      ? value : null;
+  },
+  saveVolume(name, kind, value) {
+    const key = this.nameKey(name);
+    if (key) this.write(`volume:${encodeURIComponent(key)}:${kind}`, value);
+  },
+};
+
 window.uidNameMap = {};
 window.getDisplayName = (uid) => {
   return window.uidNameMap[uid] || String(uid);

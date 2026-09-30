@@ -20,7 +20,7 @@ function track() {
   };
 }
 
-function setup() {
+function setup(storage) {
   const clients = [];
   const screenButton = { classList: { add() {}, remove() {} } };
   const visibility = [];
@@ -52,16 +52,138 @@ function setup() {
   };
   const context = vm.createContext({
     window, AgoraRTC: sdk, console: { ...console, error() {}, warn() {} },
-    localStorage: { getItem: () => "speaker-1" },
+    localStorage: storage || { getItem: () => "speaker-1" },
     document: {
       addEventListener() {},
       getElementById: (id) => id === "screen-btn" ? screenButton : null,
     },
     setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {},
   });
+  if (storage) {
+    const utils = fs.readFileSync(path.join(__dirname, "..", "js", "utils.js"), "utf8");
+    vm.runInContext(utils.slice(utils.indexOf("window.browserPreferences ="), utils.indexOf("window.uidNameMap =")), context);
+  }
   vm.runInContext(source, context);
   return { window, context, clients, sdk, screenButton, visibility, videos, video, audio };
 }
+
+test("name preferences survive reload and new UIDs, including zero and separate screen gain", async () => {
+  const values = new Map();
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  const first = setup(storage);
+  first.window.restoreParticipantVolume(owner, " Alice ");
+  first.window.adjustVolume(owner, 0);
+  first.window.adjustScreenVolume(owner, 63);
+  const { window, clients } = setup(storage);
+  const newUid = 345678;
+  window.restoreParticipantVolume(newUid, "ALICE");
+  assert.equal(window.getRemoteVolume(newUid), 0);
+  assert.equal(window.getRemoteVolume(newUid, "screen"), 63);
+  const voice = { uid: newUid, audioTrack: track() };
+  clients[0].remoteUsers.push(voice);
+  await clients[0].events["user-published"](voice, "audio");
+  assert.deepEqual(voice.audioTrack.calls[0], ["volume", 0]);
+  window.restoreParticipantVolume(newUid, "Bob");
+  assert.equal(window.getRemoteVolume(newUid), 100);
+  assert.equal(window.getRemoteVolume(newUid, "screen"), 18);
+  window.restoreParticipantVolume(456789, "alice");
+  assert.equal(window.getRemoteVolume(456789), 0);
+});
+
+test("late presence applies saved gain to playing audio and storage failures remain harmless", async () => {
+  const values = new Map([["linkice:volume:alice:voice", "22"]]);
+  const { window, clients } = setup({ getItem: key => values.get(key) ?? null, setItem() { throw new Error("blocked"); } });
+  const voice = { uid: owner, audioTrack: track() };
+  clients[0].remoteUsers.push(voice);
+  await clients[0].events["user-published"](voice, "audio");
+  window.restoreParticipantVolume(owner, "Alice");
+  assert.deepEqual(voice.audioTrack.calls.at(-1), ["volume", 22]);
+  window.adjustVolume(owner, 48);
+  assert.equal(window.getRemoteVolume(owner), 48);
+  for (const bad of ["broken", "null", '"20"', "-1", "101", "{}"] ) {
+    values.set("linkice:volume:bob:voice", bad);
+    window.restoreParticipantVolume(345678, "Bob");
+    assert.equal(window.getRemoteVolume(345678), 100);
+  }
+  const blocked = setup({ getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } });
+  blocked.window.restoreParticipantVolume(owner, "Alice");
+  blocked.window.adjustVolume(owner, 37);
+  assert.equal(blocked.window.getRemoteVolume(owner), 37);
+});
+
+test("output switching reaches voice and cached screen tracks and reports failures", async () => {
+  const { window, clients } = setup();
+  const voice = { uid: owner, audioTrack: track() };
+  const screen = { uid: screenUid, audioTrack: track() };
+  clients[0].remoteUsers.push(voice, screen);
+  await clients[0].events["user-published"](screen, "audio");
+  // Subscription tracks can outlive or differ from the SDK user object's track.
+  const screenAudio = screen.audioTrack;
+  delete screen.audioTrack;
+  assert.equal(await window.applySpeakerDevice("headset"), true);
+  assert.deepEqual(voice.audioTrack.calls.at(-1), ["device", "headset"]);
+  assert.deepEqual(screenAudio.calls.at(-1), ["device", "headset"]);
+  voice.audioTrack.setPlaybackDevice = async () => { throw new Error("device unplugged"); };
+  assert.equal(await window.applySpeakerDevice("gone"), false);
+});
+
+test("new audio uses the active output; a failed saved output falls back before playback", async () => {
+  const { window, clients } = setup();
+  const voice = { uid: owner, audioTrack: track() };
+  window.getSpeakerDevice = () => "headset";
+  clients[0].remoteUsers.push(voice);
+  voice.audioTrack.setPlaybackDevice = async device => {
+    voice.audioTrack.calls.push(["device", device]);
+    if (device === "headset") throw new Error("unplugged");
+  };
+  await clients[0].events["user-published"](voice, "audio");
+  assert.deepEqual(voice.audioTrack.calls, [["volume", 100], ["device", "headset"], ["device", "default"], ["play"]]);
+});
+
+test("saved microphone is used at capture and only missing devices fall back to default", async () => {
+  const { window, sdk } = setup();
+  const calls = [];
+  const saved = [];
+  window.readAudioDevice = () => "preferred-mic";
+  window.saveAudioDevice = (...args) => saved.push(args);
+  window.audioSettings = { aec: false, agc: true, ans: false };
+  const mic = track();
+  sdk.createMicrophoneAudioTrack = async options => { calls.push(options); return mic; };
+  assert.equal(await window.createPreferredMicrophone(), mic);
+  assert.equal(calls[0].microphoneId, "preferred-mic");
+  assert.equal(calls[0].AEC, false);
+  assert.equal(calls[0].ANS, false);
+  sdk.createMicrophoneAudioTrack = async options => {
+    calls.push(options);
+    if (options.microphoneId) throw { code: "DEVICE_NOT_FOUND" };
+    return mic;
+  };
+  assert.equal(await window.createPreferredMicrophone(), mic);
+  assert.equal(calls.at(-1).microphoneId, undefined);
+  assert.deepEqual(saved, [["microphone", "default"]]);
+  calls.length = 0;
+  sdk.createMicrophoneAudioTrack = async options => { calls.push(options); throw { code: "PERMISSION_DENIED" }; };
+  await assert.rejects(window.createPreferredMicrophone(), error => error.code === "PERMISSION_DENIED");
+  assert.equal(calls.length, 1, "permission denial must not trigger a second capture request");
+});
+
+test("switching microphone preserves a muted track and ignores a result after leaving", async () => {
+  const { window, context } = setup();
+  const mic = { enabled: false, devices: [], async setDevice(id) { this.devices.push(id); } };
+  context.mic = mic;
+  vm.runInContext("localTracks.audioTrack = mic; isMuted = true;", context);
+  assert.equal(await window.switchMicrophone("mic-2"), true);
+  assert.equal(mic.enabled, false);
+  assert.deepEqual(mic.devices, ["mic-2"]);
+  let finish;
+  mic.setDevice = () => new Promise(resolve => { finish = resolve; });
+  const changing = window.switchMicrophone("mic-3");
+  assert.equal(await window.switchMicrophone("mic-4"), false, "concurrent switches are ignored");
+  vm.runInContext("localTracks.audioTrack = null;", context);
+  window.isVoiceJoined = false;
+  finish();
+  assert.equal(await changing, false);
+});
 
 test("voice and screen volumes are independent, with gain set before playback", async () => {
   const { window, clients, visibility } = setup();

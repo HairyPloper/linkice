@@ -36,7 +36,7 @@ window.setWatchedScreen = (uid) => {
   watchedScreenUid = uid == null ? null : String(uid);
   for (const [owner, tracks] of remoteScreenTracks) {
     tracks.audio?.setVolume(owner === watchedScreenUid
-      ? (remoteScreenVolumes.get(owner) ?? DEFAULT_SCREEN_VOLUME) : 0);
+      ? window.getRemoteVolume(owner, "screen") : 0);
   }
 };
 
@@ -53,6 +53,7 @@ window.getVoiceParticipantCount = () => window.isVoiceJoined
 
 // Keep the UI volume stable when Agora republishes/replaces a remote track.
 const remoteVolumes = new Map();
+const remotePreferenceNames = new Map();
 
 // Agora 4.24 uses a normalized logarithmic level, not the old weighted FFT
 // level. Its documented speech thresholds are 0.6 locally and 60 remotely.
@@ -410,13 +411,26 @@ window.syncScreenShareCard = (uid) => {
 // AGORA EVENT LISTENERS
 // ============================================================
 
-window.setRemotePlaybackDevice = async (track, deviceId) => {
-  if (window.supportsSpeakerSelection?.() === false) return;
-  try {
-    await track.setPlaybackDevice(deviceId);
-  } catch (error) {
-    console.warn("Speaker selection failed:", error);
-  }
+const playbackDeviceChanges = new WeakMap();
+window.setRemotePlaybackDevice = (track, deviceId) => {
+  if (window.supportsSpeakerSelection?.() === false) return Promise.resolve(false);
+  const change = (playbackDeviceChanges.get(track) || Promise.resolve()).then(async () => {
+    try {
+      await track.setPlaybackDevice(deviceId || "default");
+      return true;
+    } catch (error) {
+      console.warn("Speaker selection failed:", error);
+      return false;
+    }
+  });
+  playbackDeviceChanges.set(track, change);
+  return change;
+};
+window.applySpeakerDevice = async (deviceId) => {
+  const tracks = new Set(window.client.remoteUsers.map(user => user.audioTrack).filter(Boolean));
+  for (const remote of remoteScreenTracks.values()) if (remote.audio) tracks.add(remote.audio);
+  const results = await Promise.all([...tracks].map(track => window.setRemotePlaybackDevice(track, deviceId)));
+  return results.every(Boolean);
 };
 
 /**
@@ -453,15 +467,25 @@ window.client.on("user-published", async (user, mediaType) => {
     }
     if (mediaType === "audio") {
       const volume = isScreen
-        ? (watchedScreenUid === String(ownerUid) ? (remoteScreenVolumes.get(String(ownerUid)) ?? DEFAULT_SCREEN_VOLUME) : 0)
-        : (remoteVolumes.get(String(ownerUid)) ?? 100);
+        ? (watchedScreenUid === String(ownerUid) ? window.getRemoteVolume(ownerUid, "screen") : 0)
+        : window.getRemoteVolume(ownerUid);
       track.setVolume(volume);
-      const device = localStorage.getItem("speaker-device");
+      let device = window.getSpeakerDevice?.();
+      if (!device) {
+        try { device = localStorage.getItem("speaker-device") || "default"; }
+        catch { device = "default"; }
+      }
       if (device && track.setPlaybackDevice) {
         // Firefox does not support selecting an output device in Agora. A
         // rejected device change must not interrupt playback or screen UI.
-        void window.setRemotePlaybackDevice(track, device);
+        const applied = await window.setRemotePlaybackDevice(track, device);
+        if (!isCurrent()) return;
+        if (!applied && device !== "default" && window.supportsSpeakerSelection?.() !== false) {
+          await window.setRemotePlaybackDevice(track, "default");
+          window.showAudioDeviceStatus?.("Izabrani zvučnik nije dostupan. Proveri audio podešavanja.");
+        }
       }
+      if (!isCurrent()) return;
       track.play();
     } else if (!isScreen) {
       window.playVideoInCard(ownerUid, track);
@@ -517,6 +541,7 @@ window.client.on("user-left", (user) => {
   const displayName = window.getDisplayName(user.uid);
   delete window.uidNameMap[user.uid];
   remoteVolumes.delete(String(user.uid));
+  remotePreferenceNames.delete(String(user.uid));
   remoteScreenVolumes.delete(String(user.uid));
   window._playTone(440, 0.2); // Lower tone = departure
   if (window.appendMessage)
@@ -632,6 +657,46 @@ window.client.on("connection-state-change", async (curState, prevState) => {
 // ============================================================
 const joinBtn = document.getElementById("join-btn");
 
+window.getMicrophoneTrack = () => localTracks.audioTrack;
+window.createPreferredMicrophone = async () => {
+  const options = {
+    AEC: window.audioSettings?.aec !== false,
+    AGC: window.audioSettings?.agc !== false,
+    ANS: window.audioSettings?.ans !== false,
+  };
+  const microphoneId = window.readAudioDevice?.("microphone") || "default";
+  try {
+    return await AgoraRTC.createMicrophoneAudioTrack({
+      ...options, ...(microphoneId !== "default" ? { microphoneId } : {}),
+    });
+  } catch (error) {
+    // A removed device must not prevent joining; permission errors still surface.
+    if (microphoneId === "default" || !/DEVICE_NOT_FOUND|CONSTRAINT_NOT_SATISFIED|NotFoundError|OverconstrainedError/.test(`${error.code} ${error.name}`)) throw error;
+    const track = await AgoraRTC.createMicrophoneAudioTrack(options);
+    window.saveAudioDevice?.("microphone", "default");
+    window.appendMessage?.("Sistem", "Sačuvani mikrofon nije dostupan. Koristi se podrazumevani mikrofon.", "#fbbf24");
+    return track;
+  }
+};
+let microphoneSwitchInFlight = false;
+window.switchMicrophone = async (deviceId) => {
+  const track = localTracks.audioTrack;
+  if (!window.isVoiceJoined || !track || microphoneSwitchInFlight || muteToggleInFlight) return false;
+  microphoneSwitchInFlight = true;
+  try {
+    // Switch the existing track so publishing and the mute state are preserved.
+    await track.setDevice(deviceId || "default");
+    if (localTracks.audioTrack !== track) return false;
+    if (!isMuted) startLocalVolumeMonitor(track);
+    return true;
+  } catch (error) {
+    console.warn("Microphone selection failed:", error);
+    return false;
+  } finally {
+    microphoneSwitchInFlight = false;
+  }
+};
+
 if (joinBtn) joinBtn.onclick = async () => {
   const btn = joinBtn;
   btn.disabled = true;
@@ -640,11 +705,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     // --- 1. ACQUIRE MICROPHONE ---
     let audioTrack;
     try {
-      audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-        AEC: window.audioSettings?.aec !== false,
-        AGC: window.audioSettings?.agc !== false,
-        ANS: window.audioSettings?.ans !== false,
-      });
+      audioTrack = await window.createPreferredMicrophone();
     } catch (micErr) {
       console.error("Mikrofon nije dostupan:", micErr);
 
@@ -679,7 +740,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     await window.client.publish(localTracks.audioTrack);
     window.isVoiceJoined = true;
     startAfkTimer();
-    void window.loadSpeakers?.();
+    void window.loadAudioDevices?.();
 
     // --- 5. PRESENCE IDENTITY IS NOW MARKED AS VOICE-JOINED ---
     window.uidNameMap[window.client.uid] = window.myDisplayName;
@@ -708,6 +769,7 @@ if (joinBtn) joinBtn.onclick = async () => {
     console.error(e);
     // Attempt to clean up Agora state if join/publish failed after partial success
     window.isVoiceJoined = false;
+    window.hideAudioDevices?.();
     window.setWatchedScreen(null);
     clearAfkTimers();
     stopLocalVolumeMonitor();
@@ -742,6 +804,7 @@ async function leaveChannel(reason = "manual") {
   isLeavingChannel = true;
   try {
     window.isVoiceJoined = false;
+    window.hideAudioDevices?.();
     window.setWatchedScreen(null);
     clearAfkTimers();
 
@@ -778,6 +841,7 @@ async function leaveChannel(reason = "manual") {
     speakingTimers.forEach((timer) => clearTimeout(timer));
     speakingTimers.clear();
     remoteVolumes.clear();
+    remotePreferenceNames.clear();
     remoteScreenVolumes.clear();
     for (const uid of remoteScreenTracks.keys()) {
       window.removeVideoFromCard(uid);
@@ -834,7 +898,7 @@ if (leaveBtn) leaveBtn.onclick = () => leaveChannel("manual");
 // ============================================================
 let muteToggleInFlight = false;
 window.toggleMute = async () => {
-  if (!localTracks.audioTrack || muteToggleInFlight) return;
+  if (!localTracks.audioTrack || muteToggleInFlight || microphoneSwitchInFlight) return;
   const audioTrack = localTracks.audioTrack;
   const uid = window.client.uid;
   muteToggleInFlight = true;
@@ -889,17 +953,39 @@ window.toggleMute = async () => {
 window.adjustVolume = (uid, vol) => {
   const volume = Math.max(0, Math.min(100, Number.parseInt(vol, 10) || 0));
   remoteVolumes.set(String(uid), volume);
+  window.browserPreferences?.saveVolume(window.uidNameMap[uid], "voice", volume);
   const user = window.client.remoteUsers.find((u) => u.uid == uid);
   if (user?.audioTrack) user.audioTrack.setVolume(volume);
 };
 
-window.getRemoteVolume = (uid, kind = "voice") => kind === "screen"
-  ? (remoteScreenVolumes.get(String(uid)) ?? DEFAULT_SCREEN_VOLUME)
-  : (remoteVolumes.get(String(uid)) ?? 100);
+window.getRemoteVolume = (uid, kind = "voice") => {
+  const volumes = kind === "screen" ? remoteScreenVolumes : remoteVolumes;
+  return volumes.get(String(uid))
+    ?? window.browserPreferences?.volume(window.uidNameMap?.[uid], kind)
+    ?? (kind === "screen" ? DEFAULT_SCREEN_VOLUME : 100);
+};
+
+// Presence can arrive after the media track. Apply the preference then too.
+window.restoreParticipantVolume = (uid, name) => {
+  const previousName = remotePreferenceNames.get(String(uid));
+  remotePreferenceNames.set(String(uid), name);
+  window.uidNameMap[uid] = name;
+  for (const [kind, volumes] of [["voice", remoteVolumes], ["screen", remoteScreenVolumes]]) {
+    if (previousName && previousName !== name) volumes.delete(String(uid));
+    if (!previousName && volumes.has(String(uid))) {
+      window.browserPreferences?.saveVolume(name, kind, volumes.get(String(uid)));
+    }
+  }
+  const user = window.client.remoteUsers.find((u) => String(u.uid) === String(uid));
+  user?.audioTrack?.setVolume(window.getRemoteVolume(uid));
+  remoteScreenTracks.get(String(uid))?.audio?.setVolume(
+    watchedScreenUid === String(uid) ? window.getRemoteVolume(uid, "screen") : 0);
+};
 
 window.adjustScreenVolume = (uid, vol) => {
   const volume = Math.max(0, Math.min(100, Number.parseInt(vol, 10) || 0));
   remoteScreenVolumes.set(String(uid), volume);
+  window.browserPreferences?.saveVolume(window.uidNameMap[uid], "screen", volume);
   remoteScreenTracks.get(String(uid))?.audio?.setVolume(watchedScreenUid === String(uid) ? volume : 0);
 };
 
